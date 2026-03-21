@@ -62,6 +62,13 @@ class ListenerConfig(BaseModel):
     auto_learn: bool = Field(default=True, description="Auto-extract memories from conversations")
     consolidation_interval: int = Field(default=86400, description="Consolidation interval in seconds")
     custom_patterns: list[CustomPattern] = Field(default_factory=list, description="User-defined detection patterns")
+    review_mode: str = Field(
+        default="review",
+        description="How auto-detected memories are handled: "
+                    "'review' = queue for approval (default), "
+                    "'auto' = store directly without review, "
+                    "'off' = don't auto-detect at all"
+    )
 
 
 class SanitizerConfig(BaseModel):

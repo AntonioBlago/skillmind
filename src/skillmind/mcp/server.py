@@ -44,6 +44,9 @@ def create_server():
     trainer = Trainer(store)
     context_gen = ContextGenerator(store, max_tokens=config.context_max_tokens)
 
+    from ..review import ReviewQueue
+    review_queue = ReviewQueue(queue_path=f"{config.data_dir}/review_queue.json")
+
     # ─── Memory CRUD Tools ────────────────────────────────────────
 
     @mcp.tool()
@@ -508,6 +511,172 @@ def create_server():
             "description": removed.description,
             "remaining": len(patterns),
         }, indent=2)
+
+    # ─── Review Mode & Queue Tools ─────────────────────────────
+
+    @mcp.tool()
+    def set_review_mode(mode: str) -> str:
+        """
+        Set how auto-detected memories are handled.
+
+        Args:
+            mode: One of:
+                - 'review' = queue for approval first (default, safest)
+                - 'auto' = store directly without review (fastest)
+                - 'off' = disable auto-detection completely
+        """
+        if mode not in ("review", "auto", "off"):
+            return json.dumps({"status": "error", "message": "Mode must be: review, auto, or off"})
+
+        config.listener.review_mode = mode
+        config.save()
+        return json.dumps({
+            "status": "updated",
+            "review_mode": mode,
+            "description": {
+                "review": "Auto-detected memories go to review queue first",
+                "auto": "Auto-detected memories stored directly in vector DB",
+                "off": "Auto-detection disabled, only manual remember works",
+            }[mode],
+        }, indent=2)
+
+    @mcp.tool()
+    def get_review_mode() -> str:
+        """Show the current review mode (review/auto/off)."""
+        return json.dumps({
+            "review_mode": config.listener.review_mode,
+            "pending_count": review_queue.count_pending(),
+        }, indent=2)
+
+    @mcp.tool()
+    def review_pending() -> str:
+        """
+        Show all pending memories waiting for review.
+        Auto-detected memories land here first before being stored in the vector DB.
+        Review each one and approve or reject.
+        """
+        pending = review_queue.list_pending()
+        stats = review_queue.stats()
+
+        return json.dumps({
+            "pending": stats["pending"],
+            "approved_total": stats["approved"],
+            "rejected_total": stats["rejected"],
+            "items": [
+                {
+                    "id": e["id"],
+                    "type": e["type"],
+                    "topic": e["topic"],
+                    "title": e["title"],
+                    "content": e["content"][:300] + ("..." if len(e["content"]) > 300 else ""),
+                    "trigger": e.get("trigger", ""),
+                    "detected_at": e["detected_at"],
+                }
+                for e in pending
+            ],
+        }, indent=2)
+
+    @mcp.tool()
+    def approve_memory(entry_id: str) -> str:
+        """
+        Approve a pending memory and store it in the vector database.
+
+        Args:
+            entry_id: ID from review_pending (supports partial ID match)
+        """
+        memory = review_queue.approve(entry_id, trainer)
+        if memory:
+            return json.dumps({
+                "status": "approved",
+                "id": entry_id,
+                "memory_id": memory.id,
+                "type": memory.type.value,
+                "topic": memory.topic,
+                "title": memory.title,
+                "remaining_pending": review_queue.count_pending(),
+            }, indent=2)
+        return json.dumps({"status": "not_found", "id": entry_id})
+
+    @mcp.tool()
+    def reject_memory(entry_id: str, reason: str = "") -> str:
+        """
+        Reject a pending memory (won't be stored).
+
+        Args:
+            entry_id: ID from review_pending
+            reason: Why rejected (optional, for learning)
+        """
+        success = review_queue.reject(entry_id, reason)
+        return json.dumps({
+            "status": "rejected" if success else "not_found",
+            "id": entry_id,
+            "reason": reason,
+            "remaining_pending": review_queue.count_pending(),
+        }, indent=2)
+
+    @mcp.tool()
+    def approve_all_pending() -> str:
+        """Approve all pending memories at once."""
+        memories = review_queue.approve_all(trainer)
+        return json.dumps({
+            "status": "approved_all",
+            "count": len(memories),
+            "memories": [
+                {"id": m.id, "type": m.type.value, "title": m.title[:60]}
+                for m in memories
+            ],
+        }, indent=2)
+
+    @mcp.tool()
+    def reject_all_pending() -> str:
+        """Reject all pending memories at once."""
+        count = review_queue.reject_all()
+        return json.dumps({
+            "status": "rejected_all",
+            "count": count,
+        }, indent=2)
+
+    @mcp.tool()
+    def edit_pending(
+        entry_id: str,
+        content: str = "",
+        type: str = "",
+        topic: str = "",
+        title: str = "",
+    ) -> str:
+        """
+        Edit a pending memory before approving it.
+
+        Args:
+            entry_id: ID from review_pending
+            content: New content (empty = keep)
+            type: New type (empty = keep)
+            topic: New topic (empty = keep)
+            title: New title (empty = keep)
+        """
+        kwargs = {}
+        if content:
+            kwargs["content"] = content
+        if type:
+            kwargs["type"] = type
+        if topic:
+            kwargs["topic"] = topic
+        if title:
+            kwargs["title"] = title
+
+        entry = review_queue.edit_pending(entry_id, **kwargs)
+        if entry:
+            return json.dumps({
+                "status": "edited",
+                "entry": {
+                    "id": entry["id"],
+                    "type": entry["type"],
+                    "topic": entry["topic"],
+                    "title": entry["title"],
+                    "content": entry["content"][:200],
+                },
+            }, indent=2)
+        return json.dumps({"status": "not_found", "id": entry_id})
 
     return mcp
 
