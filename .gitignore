@@ -43,6 +43,5 @@ desktop.ini
 # Recordings (runtime)
 recordings/
 
-# Website
-website/instance/
-website/__pycache__/
+# Website (private, not in public repo)
+website/
