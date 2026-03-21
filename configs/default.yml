@@ -1,0 +1,40 @@
+version: "1.0"
+project_name: default
+data_dir: .skillmind
+
+embedding:
+  provider: sentence-transformers    # sentence-transformers (local, free) | openai (API)
+  model: all-MiniLM-L6-v2           # Fast, 384-dim, good quality
+  dimension: 384
+
+store:
+  backend: chroma                    # chroma | pinecone | supabase | qdrant | faiss
+
+  # ChromaDB (default — local, zero-cost)
+  chroma_path: .skillmind/chroma
+
+  # Pinecone (cloud, scalable — set PINECONE_API_KEY env var)
+  pinecone_api_key: ""
+  pinecone_index: skillmind
+  pinecone_environment: ""
+
+  # Supabase (cloud, SQL + vectors — set SUPABASE_URL and SUPABASE_KEY env vars)
+  supabase_url: ""
+  supabase_key: ""
+  supabase_table: memories
+
+  # Qdrant (local or cloud — set QDRANT_URL env var)
+  qdrant_url: http://localhost:6333
+  qdrant_api_key: ""
+  qdrant_collection: skillmind
+
+  # FAISS (local, fastest, fully offline)
+  faiss_path: .skillmind/faiss
+
+listener:
+  watch_git: true
+  watch_files: true
+  auto_learn: true
+  consolidation_interval: 86400      # Run consolidation daily
+
+context_max_tokens: 4000             # Max tokens for context injection

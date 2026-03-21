@@ -1,0 +1,1 @@
+"""SkillMind CLI."""

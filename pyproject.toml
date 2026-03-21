@@ -1,0 +1,58 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "skillmind"
+version = "0.1.0"
+description = "Active Skill Listener & Trainer — structured memory layer for AI coding assistants"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.10"
+authors = [{ name = "Antonio Blago", email = "info@antonioblago.com" }]
+
+dependencies = [
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+    "click>=8.0",
+    "rich>=13.0",
+    "sentence-transformers>=2.2.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+chroma = ["chromadb>=0.4.0"]
+pinecone = ["pinecone-client>=3.0"]
+supabase = ["supabase>=2.0", "vecs>=0.4"]
+qdrant = ["qdrant-client>=1.7"]
+faiss = ["faiss-cpu>=1.7"]
+mcp = ["fastmcp>=0.1"]
+youtube = ["youtube-transcript-api>=1.0.0", "yt-dlp>=2024.0.0", "requests>=2.31.0"]
+video = ["opencv-python>=4.8", "pillow>=10.0", "mss>=9.0", "pytesseract>=0.3.10"]
+whisper = ["openai-whisper>=20230314"]
+all = [
+    "chromadb>=0.4.0",
+    "pinecone-client>=3.0",
+    "supabase>=2.0",
+    "vecs>=0.4",
+    "qdrant-client>=1.7",
+    "faiss-cpu>=1.7",
+    "fastmcp>=0.1",
+    "youtube-transcript-api>=1.0.0",
+    "yt-dlp>=2024.0.0",
+    "requests>=2.31.0",
+    "opencv-python>=4.8",
+    "pillow>=10.0",
+    "mss>=9.0",
+    "pytesseract>=0.3.10",
+]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.21"]
+
+[project.scripts]
+skillmind = "skillmind.cli.main:cli"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/skillmind"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
