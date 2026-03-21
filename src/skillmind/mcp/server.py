@@ -416,6 +416,99 @@ def create_server():
         path = recorder.screenshot()
         return json.dumps({"status": "captured", "path": path})
 
+    # ─── Custom Pattern Management ────────────────────────────
+
+    @mcp.tool()
+    def add_pattern(
+        pattern: str,
+        memory_type: str = "feedback",
+        topic: str = "",
+        description: str = "",
+    ) -> str:
+        """
+        Add a custom auto-detection pattern. When a user message matches the regex,
+        it will be automatically saved as a memory of the given type.
+
+        Args:
+            pattern: Regex pattern (e.g. "\\bSEO\\b.*\\b(tipp|trick|hack)\\b")
+            memory_type: Memory type to assign: user, feedback, project, reference, skill
+            topic: Force this topic (empty = auto-detect)
+            description: What this pattern detects (for your reference)
+
+        Examples:
+            pattern="\\brezept\\b|\\brezeptur\\b", memory_type="skill", topic="cooking"
+            pattern="\\b(paroc|x-bionic|tanzraum)\\b", memory_type="project", topic="client_work"
+            pattern="\\bpreis\\b.*\\b(pro|monat|stunde)\\b", memory_type="project", topic="pricing"
+        """
+        from ..config import CustomPattern as CP
+
+        # Validate regex
+        import re
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            return json.dumps({"status": "error", "message": f"Invalid regex: {e}"})
+
+        # Validate memory type
+        try:
+            MemoryType(memory_type)
+        except ValueError:
+            return json.dumps({"status": "error", "message": f"Invalid type: {memory_type}. Use: user, feedback, project, reference, skill"})
+
+        # Add to config
+        new_pattern = CP(pattern=pattern, memory_type=memory_type, topic=topic, description=description)
+        config.listener.custom_patterns.append(new_pattern)
+        config.save()
+
+        return json.dumps({
+            "status": "added",
+            "pattern": pattern,
+            "memory_type": memory_type,
+            "topic": topic or "(auto-detect)",
+            "description": description,
+            "total_patterns": len(config.listener.custom_patterns),
+        }, indent=2)
+
+    @mcp.tool()
+    def list_patterns() -> str:
+        """List all custom auto-detection patterns."""
+        patterns = config.listener.custom_patterns
+        return json.dumps({
+            "count": len(patterns),
+            "patterns": [
+                {
+                    "index": i,
+                    "pattern": p.pattern,
+                    "memory_type": p.memory_type,
+                    "topic": p.topic or "(auto-detect)",
+                    "description": p.description,
+                }
+                for i, p in enumerate(patterns)
+            ],
+        }, indent=2)
+
+    @mcp.tool()
+    def remove_pattern(index: int) -> str:
+        """
+        Remove a custom pattern by its index number (from list_patterns).
+
+        Args:
+            index: Pattern index to remove (0-based)
+        """
+        patterns = config.listener.custom_patterns
+        if index < 0 or index >= len(patterns):
+            return json.dumps({"status": "error", "message": f"Index {index} out of range (0-{len(patterns)-1})"})
+
+        removed = patterns.pop(index)
+        config.save()
+
+        return json.dumps({
+            "status": "removed",
+            "pattern": removed.pattern,
+            "description": removed.description,
+            "remaining": len(patterns),
+        }, indent=2)
+
     return mcp
 
 

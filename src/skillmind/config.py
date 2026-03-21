@@ -45,6 +45,15 @@ class StoreConfig(BaseModel):
     faiss_path: str = Field(default=".skillmind/faiss", description="FAISS index path")
 
 
+class CustomPattern(BaseModel):
+    """A user-defined detection pattern."""
+
+    pattern: str = Field(..., description="Regex pattern to match in user messages")
+    memory_type: str = Field(..., description="Memory type to assign: user, feedback, project, reference, skill")
+    topic: str = Field(default="", description="Force this topic when pattern matches (empty = auto-detect)")
+    description: str = Field(default="", description="What this pattern detects (for reference)")
+
+
 class ListenerConfig(BaseModel):
     """Listener configuration."""
 
@@ -52,6 +61,7 @@ class ListenerConfig(BaseModel):
     watch_files: bool = Field(default=True, description="Watch file changes")
     auto_learn: bool = Field(default=True, description="Auto-extract memories from conversations")
     consolidation_interval: int = Field(default=86400, description="Consolidation interval in seconds")
+    custom_patterns: list[CustomPattern] = Field(default_factory=list, description="User-defined detection patterns")
 
 
 class SanitizerConfig(BaseModel):

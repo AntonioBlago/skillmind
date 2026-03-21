@@ -157,10 +157,12 @@ class ConversationListener:
     - User preferences (user memories)
     - Project context (project memories)
     - External references (reference memories)
+    - Custom user-defined patterns
     """
 
-    def __init__(self, trainer: Trainer):
+    def __init__(self, trainer: Trainer, custom_patterns: list | None = None):
         self.trainer = trainer
+        self.custom_patterns = custom_patterns or []
 
     def extract_from_messages(self, messages: list[dict[str, str]]) -> list[Memory]:
         """
@@ -180,6 +182,29 @@ class ConversationListener:
 
             content = msg.get("content", "")
             if not content or len(content) < 20:
+                continue
+
+            # Check custom patterns first (highest priority)
+            custom_matched = False
+            for cp in self.custom_patterns:
+                try:
+                    if re.search(cp.get("pattern", ""), content, re.IGNORECASE):
+                        mem_type_str = cp.get("memory_type", "feedback")
+                        force_topic = cp.get("topic", None) or None
+                        mem = self.trainer.learn(
+                            content=content,
+                            source=MemorySource.CONVERSATION,
+                            force_type=MemoryType(mem_type_str),
+                            force_topic=force_topic,
+                        )
+                        if mem:
+                            memories.append(mem)
+                        custom_matched = True
+                        break
+                except (re.error, ValueError):
+                    continue
+
+            if custom_matched:
                 continue
 
             # Detect corrections / feedback
