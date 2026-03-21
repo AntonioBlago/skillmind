@@ -61,7 +61,7 @@ skillmind import ~/.claude/projects/*/memory/
                                     ┌─────────────────┐
                                     │  CLAUDE CODE     │
                                     │  (MCP Server)    │
-                                    │  14 tools        │
+                                    │  23 tools        │
                                     └─────────────────┘
 ```
 
@@ -77,10 +77,11 @@ skillmind import ~/.claude/projects/*/memory/
 
 All backends implement the same interface — switch anytime with zero data loss.
 
-## 14 MCP Tools for Claude Code
+## 23 MCP Tools for Claude Code
 
 Once installed, Claude Code gets these tools:
 
+### Memory CRUD
 | Tool | What it does |
 |---|---|
 | `remember` | Store memory (auto-classified, sanitized, deduped) |
@@ -92,11 +93,34 @@ Once installed, Claude Code gets these tools:
 | `memory_stats` | Counts by type, backend info |
 | `list_memories` | Filter by type/topic |
 | `import_markdown_memories` | Bulk import from Claude Code markdown files |
+
+### Video & YouTube Learning
+| Tool | What it does |
+|---|---|
 | `learn_youtube` | Extract knowledge from YouTube video |
 | `learn_youtube_channel` | Learn from channel's latest videos |
 | `learn_video` | Learn from local video/screen recording |
 | `record_screen` | Record screen to MP4 |
 | `screenshot` | Capture screenshot |
+
+### Custom Patterns
+| Tool | What it does |
+|---|---|
+| `add_pattern` | Create auto-detection regex (e.g. client names, SEO terms) |
+| `list_patterns` | Show all custom patterns |
+| `remove_pattern` | Delete a pattern |
+
+### Review Queue
+| Tool | What it does |
+|---|---|
+| `set_review_mode` | Switch: `review` (queue first), `auto` (store directly), `off` |
+| `get_review_mode` | Show current mode |
+| `review_pending` | Show queued memories waiting for approval |
+| `approve_memory` | Approve single memory → store in vector DB |
+| `reject_memory` | Reject single memory → discard |
+| `approve_all_pending` | Approve all at once |
+| `reject_all_pending` | Clear the queue |
+| `edit_pending` | Edit content/type/topic before approving |
 
 ### MCP Setup (Claude Code settings.json)
 
