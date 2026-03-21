@@ -215,16 +215,35 @@ class ConversationListener:
         return memories
 
     def _is_correction(self, text: str) -> bool:
-        """Detect if user is correcting assistant behavior."""
+        """Detect if user is correcting, instructing, or asking to remember."""
         patterns = [
+            # English corrections
             r"\bdon'?t\b.*\b(do|use|add|make)\b",
             r"\bstop\b.*\b(doing|adding|using)\b",
             r"\bnever\b.*\b(do|use|add)\b",
             r"\balways\b.*\b(use|do|make|prefer)\b",
-            r"\bnicht\b.*\b(machen|verwenden|nutzen)\b",
-            r"\bimmer\b.*\b(verwenden|machen|nutzen)\b",
             r"\bno,?\s*(not|that'?s wrong|incorrect)\b",
             r"\bplease\b.*\b(remember|note|keep in mind)\b",
+            r"\b(remember|note)\b.*\b(that|this|to)\b",
+            r"\bkeep in mind\b",
+            r"\bfrom now on\b",
+            r"\bin the future\b.*\b(always|never|use|do)\b",
+            # German corrections & instructions
+            r"\bnicht\b.*\b(machen|verwenden|nutzen|benutzen)\b",
+            r"\bimmer\b.*\b(verwenden|machen|nutzen|benutzen|erstellen|achten)\b",
+            r"\bnie\b.*\b(verwenden|machen|nutzen|benutzen)\b",
+            r"\bniemals\b",
+            r"\bmerke?\s*(dir|das)\b",
+            r"\bmerken\b",
+            r"\bspeicher(e|n)?\b",
+            r"\bdenk(e)?\s*daran\b",
+            r"\bvergiss\s*nicht\b",
+            r"\bbeachte\b",
+            r"\bwichtig\s*:?\s",
+            r"\bab\s*jetzt\b",
+            r"\bab\s*sofort\b",
+            r"\bin\s*zukunft\b",
+            r"\bbitte\b.*\b(immer|nie|nicht|merke|beachte|verwende)\b",
         ]
         text_lower = text.lower()
         return any(re.search(p, text_lower) for p in patterns)
@@ -235,16 +254,25 @@ class ConversationListener:
             r"https?://\S+",
             r"\b(dashboard|wiki|confluence|linear|jira|slack)\b.*\b(at|in|on|under)\b",
             r"\b(tracked in|documented at|found in|check)\b",
+            # German
+            r"\b(findest\s*du|dokumentiert\s*(in|unter|auf)|schau\s*(in|auf|bei|unter))\b",
+            r"\b(nachschauen|nachgucken)\b.*\b(in|auf|bei|unter)\b",
         ]
         return any(re.search(p, text.lower()) for p in patterns)
 
     def _is_project_context(self, text: str) -> bool:
         """Detect project context information."""
         patterns = [
+            # English
             r"\b(deadline|due|by|until)\b.*\b(monday|tuesday|wednesday|thursday|friday|tomorrow|next week)\b",
             r"\b(release|deploy|launch|freeze)\b.*\b(on|at|by|before)\b",
             r"\b(sprint|milestone|phase)\b.*\b(\d+|one|two|three)\b",
             r"\b(budget|hours|days|weeks)\b.*\b(left|remaining|allocated)\b",
+            # German
             r"\b(termin|frist|bis|deadline)\b",
+            r"\b(kunde|client|projekt)\b.*\b(hat|will|braucht|muss|soll)\b",
+            r"\b(montag|dienstag|mittwoch|donnerstag|freitag|morgen|naechste\s*woche)\b",
+            r"\b(budget|stunden|tage|wochen)\b.*\b(uebrig|verbleibend|eingeplant|noch)\b",
+            r"\b(phase|meilenstein|sprint)\b.*\b\d+\b",
         ]
         return any(re.search(p, text.lower()) for p in patterns)

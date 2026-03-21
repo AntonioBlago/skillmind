@@ -19,27 +19,36 @@ from .store.base import MemoryStore
 TYPE_SIGNALS: dict[MemoryType, list[str]] = {
     MemoryType.USER: [
         "i am", "my role", "i work", "my background", "i prefer",
-        "ich bin", "mein beruf", "meine rolle",
+        "ich bin", "mein beruf", "meine rolle", "ich arbeite",
+        "meine erfahrung", "mein hintergrund",
     ],
     MemoryType.FEEDBACK: [
         "don't", "always", "never", "stop", "keep doing", "prefer",
-        "nicht", "immer", "nie", "aufhören", "bitte",
         "correct", "wrong", "right way", "better to",
+        "remember", "keep in mind", "from now on", "in the future",
+        "nicht", "immer", "nie", "niemals", "bitte",
+        "merke dir", "merken", "speicher", "denk daran",
+        "vergiss nicht", "beachte", "wichtig", "ab jetzt", "ab sofort",
+        "in zukunft", "achte darauf",
     ],
     MemoryType.PROJECT: [
         "deadline", "sprint", "release", "client", "meeting",
-        "projekt", "kunde", "termin", "phase", "milestone",
         "budget", "timeline", "status",
+        "projekt", "kunde", "termin", "phase", "milestone",
+        "meilenstein", "frist", "montag", "dienstag", "mittwoch",
+        "donnerstag", "freitag",
     ],
     MemoryType.REFERENCE: [
         "url", "link", "dashboard", "wiki", "confluence",
         "linear", "jira", "slack", "channel", "board",
         "api key", "endpoint", "documentation at",
+        "findest du", "dokumentiert", "nachschauen",
     ],
     MemoryType.SKILL: [
         "how to", "pattern", "architecture", "workflow",
         "best practice", "template", "boilerplate",
-        "anleitung", "vorlage", "workflow",
+        "anleitung", "vorlage", "workflow", "schritt fuer schritt",
+        "so geht", "so funktioniert",
     ],
 }
 
