@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="#0c1115"/>
+  <circle cx="256" cy="256" r="240" stroke="#f6571e" stroke-width="8"/>
+
+  <!-- Brain/memory icon - stylized neural network -->
+  <!-- Central node -->
+  <circle cx="256" cy="220" r="28" fill="#f6571e"/>
+
+  <!-- Upper nodes -->
+  <circle cx="180" cy="160" r="18" fill="#ff912c"/>
+  <circle cx="332" cy="160" r="18" fill="#ff912c"/>
+  <circle cx="256" cy="130" r="14" fill="#f6571e" opacity="0.7"/>
+
+  <!-- Middle nodes -->
+  <circle cx="160" cy="240" r="16" fill="#ff912c" opacity="0.8"/>
+  <circle cx="352" cy="240" r="16" fill="#ff912c" opacity="0.8"/>
+
+  <!-- Lower nodes -->
+  <circle cx="190" cy="300" r="14" fill="#f6571e" opacity="0.6"/>
+  <circle cx="322" cy="300" r="14" fill="#f6571e" opacity="0.6"/>
+
+  <!-- Connections -->
+  <line x1="256" y1="220" x2="180" y2="160" stroke="#f6571e" stroke-width="3" opacity="0.5"/>
+  <line x1="256" y1="220" x2="332" y2="160" stroke="#f6571e" stroke-width="3" opacity="0.5"/>
+  <line x1="256" y1="220" x2="256" y2="130" stroke="#f6571e" stroke-width="3" opacity="0.5"/>
+  <line x1="256" y1="220" x2="160" y2="240" stroke="#f6571e" stroke-width="3" opacity="0.4"/>
+  <line x1="256" y1="220" x2="352" y2="240" stroke="#f6571e" stroke-width="3" opacity="0.4"/>
+  <line x1="256" y1="220" x2="190" y2="300" stroke="#f6571e" stroke-width="3" opacity="0.3"/>
+  <line x1="256" y1="220" x2="322" y2="300" stroke="#f6571e" stroke-width="3" opacity="0.3"/>
+  <line x1="180" y1="160" x2="256" y2="130" stroke="#ff912c" stroke-width="2" opacity="0.3"/>
+  <line x1="332" y1="160" x2="256" y2="130" stroke="#ff912c" stroke-width="2" opacity="0.3"/>
+  <line x1="160" y1="240" x2="190" y2="300" stroke="#ff912c" stroke-width="2" opacity="0.3"/>
+  <line x1="352" y1="240" x2="322" y2="300" stroke="#ff912c" stroke-width="2" opacity="0.3"/>
+
+  <!-- Pulse rings around central node -->
+  <circle cx="256" cy="220" r="45" stroke="#f6571e" stroke-width="2" fill="none" opacity="0.3"/>
+  <circle cx="256" cy="220" r="65" stroke="#f6571e" stroke-width="1.5" fill="none" opacity="0.15"/>
+
+  <!-- SM text -->
+  <text x="256" y="400" text-anchor="middle" font-family="Montserrat, Arial, sans-serif" font-weight="800" font-size="72" fill="white">SM</text>
+</svg>

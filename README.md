@@ -4,11 +4,12 @@
 
 # SkillMind
 
-[![Version](https://img.shields.io/badge/version-0.1.0-blue.svg)](https://github.com/AntonioBlago/skillmind/releases)
+[![PyPI version](https://badge.fury.io/py/skillmind.svg)](https://pypi.org/project/skillmind/)
+[![PyPI - Downloads](https://img.shields.io/pypi/dm/skillmind.svg)](https://pypi.org/project/skillmind/)
+[![PyPI - Python Version](https://img.shields.io/pypi/pyversions/skillmind.svg)](https://pypi.org/project/skillmind/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![MCP Integration](https://img.shields.io/badge/MCP-Integrated-blue.svg)](https://modelcontextprotocol.io)
-[![Website](https://img.shields.io/badge/Website-skill--mind.com-orange.svg)](https://skill-mind.com/)
+[![Website](https://img.shields.io/badge/Website-skill--mind.com-orange.svg)](https://www.skill-mind.com/)
 
 **Active Skill Listener & Trainer** — the structured memory layer for AI coding assistants.
 
@@ -215,6 +216,42 @@ src/skillmind/
     └── main.py        # CLI (click-based)
 ```
 
+## Complementary MCP Tools
+
+SkillMind works great alongside other MCP servers:
+
+| MCP Server | What it adds | Install |
+|---|---|---|
+| **[Visibly AI MCP](https://pypi.org/project/visiblyai-mcp-server/)** | SEO skills: keyword research, backlinks, site audit, GSC queries, on-page analysis | `pip install visiblyai-mcp-server` |
+| **[Notion MCP](https://mcp.notion.com/)** | Read/write Notion pages, databases, todos | Built-in |
+| **[Playwright MCP](https://github.com/anthropics/mcp-playwright)** | Browser automation, screenshots, web scraping | Built-in |
+
+### Example: SEO Memory + Skills
+
+```bash
+# Install both
+pip install skillmind[pinecone,mcp] visiblyai-mcp-server
+```
+
+```json
+{
+  "mcpServers": {
+    "skillmind": {
+      "command": "python",
+      "args": ["-m", "skillmind.mcp.server"],
+      "env": { "SKILLMIND_BACKEND": "pinecone", "PINECONE_API_KEY": "..." }
+    },
+    "visiblyai": {
+      "type": "http",
+      "url": "https://mcp.visibly-ai.com/mcp",
+      "headers": { "Authorization": "Bearer YOUR_KEY" }
+    }
+  }
+}
+```
+
+SkillMind remembers your SEO preferences, client keywords, and audit findings. Visibly AI provides the live SEO data. Together: persistent SEO intelligence.
+
 ## Contributing
 
 PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
@@ -225,4 +262,4 @@ MIT — see [LICENSE](LICENSE).
 
 ---
 
-Built by [Antonio Blago](https://antonioblago.de) | [skill-mind.com](https://skill-mind.com)
+Built by [Antonio Blago](https://antonioblago.de) | [skill-mind.com](https://www.skill-mind.com)
