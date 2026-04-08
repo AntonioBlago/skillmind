@@ -44,7 +44,7 @@ pinecone = ["pinecone-client>=3.0"]
 supabase = ["supabase>=2.0", "vecs>=0.4"]
 qdrant = ["qdrant-client>=1.7"]
 faiss = ["faiss-cpu>=1.7"]
-mcp = ["fastmcp>=0.1"]
+mcp = ["fastmcp>=3.2.0"]
 youtube = ["youtube-transcript-api>=1.0.0", "yt-dlp>=2024.0.0", "requests>=2.31.0"]
 video = ["opencv-python>=4.8", "pillow>=10.0", "mss>=9.0", "pytesseract>=0.3.10"]
 whisper = ["openai-whisper>=20230314"]
@@ -55,7 +55,7 @@ all = [
     "vecs>=0.4",
     "qdrant-client>=1.7",
     "faiss-cpu>=1.7",
-    "fastmcp>=0.1",
+    "fastmcp>=3.2.0",
     "youtube-transcript-api>=1.0.0",
     "yt-dlp>=2024.0.0",
     "requests>=2.31.0",
