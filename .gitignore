@@ -43,5 +43,9 @@ desktop.ini
 # Recordings (runtime)
 recordings/
 
+# Obsidian vaults (user data, not code)
+test_vault/
+*_vault/
+
 # Website (private, not in public repo)
 website/

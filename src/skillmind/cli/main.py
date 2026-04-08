@@ -422,6 +422,57 @@ def take_screenshot(ctx: click.Context, output: str) -> None:
     console.print(f"[green]Saved: {path}[/green]")
 
 
+# ── Obsidian Vault Export Commands ────────────────────────────
+
+
+@cli.command("export")
+@click.argument("vault_path")
+@click.option("--full-rebuild", is_flag=True, help="Regenerate all wiki pages from scratch")
+@click.pass_context
+def export_obsidian(ctx: click.Context, vault_path: str, full_rebuild: bool) -> None:
+    """Export all memories to an Obsidian vault (Karpathy wiki pattern)."""
+    from ..exporters.obsidian import ObsidianExporter
+
+    config, _, store, _ = _get_components(ctx.obj.get("config_path"))
+    exporter = ObsidianExporter(vault_path)
+    memories = store.list_all(limit=10000)
+
+    console.print(f"[bold]Exporting {len(memories)} memories to {vault_path}[/bold]")
+    stats = exporter.export(memories, full_rebuild=full_rebuild)
+
+    console.print(f"  [green]Created: {stats['pages_created']} pages[/green]")
+    console.print(f"  [yellow]Updated: {stats['pages_updated']} pages[/yellow]")
+    console.print(f"  Open {vault_path} in Obsidian to see the knowledge graph.")
+
+    if not config.obsidian.vault_path:
+        config.obsidian.vault_path = vault_path
+        config.save()
+
+
+@cli.command("sync")
+@click.option("--vault", "-v", default="", help="Vault path (uses config if empty)")
+@click.pass_context
+def sync_obsidian(ctx: click.Context, vault: str) -> None:
+    """Incrementally sync new memories to an existing Obsidian vault."""
+    from ..exporters.obsidian import ObsidianExporter
+
+    config, _, store, _ = _get_components(ctx.obj.get("config_path"))
+    vault_path = vault or config.obsidian.vault_path
+
+    if not vault_path:
+        console.print("[red]No vault path. Run 'skillmind export <path>' first.[/red]")
+        return
+
+    exporter = ObsidianExporter(vault_path)
+    memories = store.list_all(limit=10000)
+
+    console.print(f"[bold]Syncing {len(memories)} memories to {vault_path}[/bold]")
+    stats = exporter.sync(memories)
+
+    console.print(f"  [green]Created: {stats['pages_created']} new pages[/green]")
+    console.print(f"  [dim]Skipped: {stats['pages_skipped']} existing pages[/dim]")
+
+
 # ── Setup Command ─────────────────────────────────────────────
 
 

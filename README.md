@@ -149,6 +149,37 @@ Once installed, Claude Code gets these tools:
 | **reference** | External URLs, dashboards, wikis | No |
 | **skill** | Patterns, workflows, how-tos | No |
 
+## Obsidian Vault Export (Karpathy Wiki Pattern)
+
+Export your entire memory system as an Obsidian vault with interlinked wiki pages, inspired by [Andrej Karpathy's LLM wiki approach](https://gist.github.com/karpathy/1dd0294ef9567971c1e4348a90d69285).
+
+```bash
+# Full export to a new vault
+skillmind export ~/Documents/MyWiki
+
+# Incremental sync (only new memories)
+skillmind sync --vault ~/Documents/MyWiki
+```
+
+Or via MCP tools:
+- `export_obsidian` — full export with index, topic MOCs, operation log
+- `sync_obsidian` — incremental sync of new memories only
+
+**What gets generated:**
+```
+MyWiki/
+├── CLAUDE.md          # Wiki maintenance instructions
+├── raw/               # Drop raw source material here
+└── wiki/
+    ├── index.md       # Master index by type and topic
+    ├── log.md         # Operation history
+    ├── Topic - SEO.md # Topic MOC (Map of Content)
+    ├── Topic - ...    # One MOC per topic
+    └── *.md           # One page per memory with [[wikilinks]]
+```
+
+Each wiki page has YAML frontmatter, `[[wikilinks]]` to related memories, topic links, and tags. Open in Obsidian to see the knowledge graph.
+
 ## Learn From Video
 
 ```bash

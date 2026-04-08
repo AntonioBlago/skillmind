@@ -512,6 +512,70 @@ def create_server():
             "remaining": len(patterns),
         }, indent=2)
 
+    # ─── Obsidian Vault Export Tools ─────────────────────────────
+
+    @mcp.tool()
+    def export_obsidian(
+        vault_path: str = "",
+        full_rebuild: bool = False,
+    ) -> str:
+        """
+        Export all memories to an Obsidian vault (Karpathy wiki pattern).
+
+        Creates a wiki/ folder with interlinked markdown pages, an index,
+        topic MOC pages, and an operation log. Open the vault in Obsidian
+        to see the knowledge graph.
+
+        Args:
+            vault_path: Path to Obsidian vault (uses config if empty)
+            full_rebuild: If true, regenerate all wiki pages from scratch
+        """
+        from ..exporters.obsidian import ObsidianExporter
+
+        path = vault_path or config.obsidian.vault_path
+        if not path:
+            return json.dumps({"status": "error", "message": "No vault_path provided. Pass vault_path or set obsidian.vault_path in config."})
+
+        exporter = ObsidianExporter(path)
+        memories = store.list_all(limit=10000)
+        stats = exporter.export(memories, full_rebuild=full_rebuild)
+
+        # Save path to config if not already set
+        if not config.obsidian.vault_path:
+            config.obsidian.vault_path = path
+            config.save()
+
+        return json.dumps({
+            "status": "exported",
+            "vault_path": str(path),
+            **stats,
+        }, indent=2)
+
+    @mcp.tool()
+    def sync_obsidian(vault_path: str = "") -> str:
+        """
+        Incrementally sync new memories to an existing Obsidian vault.
+        Only writes pages for memories not already in the vault.
+
+        Args:
+            vault_path: Path to Obsidian vault (uses config if empty)
+        """
+        from ..exporters.obsidian import ObsidianExporter
+
+        path = vault_path or config.obsidian.vault_path
+        if not path:
+            return json.dumps({"status": "error", "message": "No vault_path. Run export_obsidian first or set obsidian.vault_path in config."})
+
+        exporter = ObsidianExporter(path)
+        memories = store.list_all(limit=10000)
+        stats = exporter.sync(memories)
+
+        return json.dumps({
+            "status": "synced",
+            "vault_path": str(path),
+            **stats,
+        }, indent=2)
+
     # ─── Review Mode & Queue Tools ─────────────────────────────
 
     @mcp.tool()

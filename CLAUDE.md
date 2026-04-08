@@ -27,8 +27,11 @@ src/skillmind/
 │   ├── supabase_store.py  # Supabase/pgvector backend
 │   ├── qdrant_store.py    # Qdrant backend
 │   └── faiss_store.py     # FAISS + JSON backend
+├── exporters/
+│   ├── __init__.py
+│   └── obsidian.py    # Obsidian vault exporter (Karpathy wiki pattern)
 ├── mcp/
-│   └── server.py      # MCP server (10 tools for Claude Code)
+│   └── server.py      # MCP server (25+ tools for Claude Code)
 └── cli/
     └── main.py        # CLI (click-based)
 ```
@@ -44,6 +47,8 @@ skillmind recall "query"            # Semantic search
 skillmind list                      # List all
 skillmind consolidate               # Cleanup
 skillmind serve                     # Start MCP server
+skillmind export ~/MyWiki           # Export to Obsidian vault
+skillmind sync                      # Incremental sync to vault
 ```
 
 ## Store Backends

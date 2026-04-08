@@ -83,6 +83,13 @@ class SanitizerConfig(BaseModel):
     custom_patterns: list[list[str]] = Field(default_factory=list, description="Extra [pattern, label] pairs")
 
 
+class ObsidianConfig(BaseModel):
+    """Obsidian vault export configuration."""
+
+    vault_path: str = Field(default="", description="Path to Obsidian vault (empty = disabled)")
+    auto_sync: bool = Field(default=False, description="Auto-sync new memories to vault")
+
+
 class SkillMindConfig(BaseModel):
     """Root configuration."""
 
@@ -93,6 +100,7 @@ class SkillMindConfig(BaseModel):
     store: StoreConfig = Field(default_factory=StoreConfig)
     sanitizer: SanitizerConfig = Field(default_factory=SanitizerConfig)
     listener: ListenerConfig = Field(default_factory=ListenerConfig)
+    obsidian: ObsidianConfig = Field(default_factory=ObsidianConfig)
     context_max_tokens: int = Field(default=4000, description="Max tokens for context injection")
 
     @classmethod
