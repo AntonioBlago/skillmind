@@ -153,76 +153,154 @@ Once installed, Claude Code gets these tools:
 
 Export your entire memory system as an Obsidian vault with interlinked wiki pages, inspired by [Andrej Karpathy's LLM wiki approach](https://gist.github.com/karpathy/1dd0294ef9567971c1e4348a90d69285).
 
-```bash
-# Full export to a new vault
-skillmind export ~/Documents/MyWiki
+### Complete Setup Guide
 
-# Incremental sync (only new memories)
-skillmind sync --vault ~/Documents/MyWiki
-```
-
-Or via MCP tools:
-- `export_obsidian` — full export with index, topic MOCs, operation log
-- `sync_obsidian` — incremental sync of new memories only
-
-**What gets generated:**
-```
-MyWiki/
-├── CLAUDE.md          # Wiki maintenance instructions
-├── raw/               # Drop raw source material here
-└── wiki/
-    ├── index.md       # Master index by type and topic
-    ├── log.md         # Operation history
-    ├── Topic - SEO.md # Topic MOC (Map of Content)
-    ├── Topic - ...    # One MOC per topic
-    └── *.md           # One page per memory with [[wikilinks]]
-```
-
-Each wiki page has YAML frontmatter, `[[wikilinks]]` to related memories, topic links, and tags. Open in Obsidian to see the knowledge graph.
-
-## Learn From Video
+#### Step 1: Install SkillMind
 
 ```bash
-# YouTube
-skillmind learn-youtube "https://youtube.com/watch?v=..."
+# Install with your preferred backend + MCP server
+pip install skillmind[pinecone,mcp,youtube]
 
-# YouTube channel (latest 5 videos)
-skillmind learn-youtube-channel "UCxxxxx" --limit 5
-
-# Local video file
-skillmind learn-video recording.mp4
-
-# Screen recording
-skillmind record-screen --duration 60 --fps 15
+# Or install everything
+pip install skillmind[all]
 ```
 
-## Proxy Support (ScraperAPI)
+#### Step 2: Configure the MCP Server
 
-YouTube learning supports proxy routing via [ScraperAPI](https://www.scraperapi.com/pricing?fp_ref=antonio28) to avoid rate limiting or geo-restrictions.
-
-Add to your `.env` or MCP `env` config:
-
-```bash
-VPN_PROXY_API_KEY=your-scraperapi-key
-SCRAPER_Vendor=scraperapi
-```
-
-Or in `settings.json`:
+Add SkillMind to your Claude Code `settings.json`:
 
 ```json
 {
   "mcpServers": {
     "skillmind": {
+      "command": "python",
+      "args": ["-m", "skillmind.mcp.server"],
       "env": {
-        "VPN_PROXY_API_KEY": "your-scraperapi-key",
-        "SCRAPER_Vendor": "scraperapi"
+        "PINECONE_API_KEY": "your-pinecone-key",
+        "SKILLMIND_BACKEND": "pinecone",
+        "ANTHROPIC_API_KEY": "your-anthropic-key"
       }
     }
   }
 }
 ```
 
-Get your API key at [scraperapi.com](https://www.scraperapi.com/pricing?fp_ref=antonio28). All YouTube metadata, transcript, and channel fetches are automatically routed through the proxy when configured.
+Or create a `.env` file in your project root:
+
+```bash
+PINECONE_API_KEY=your-pinecone-key
+SKILLMIND_BACKEND=pinecone
+ANTHROPIC_API_KEY=your-anthropic-key
+```
+
+#### Step 3: Import Existing Memories
+
+If you already have Claude Code markdown memories:
+
+```bash
+skillmind import
+```
+
+This scans `~/.claude/projects/*/memory/*.md`, auto-classifies each memory, deduplicates, and stores them in your vector DB.
+
+#### Step 4: Install Obsidian (Free)
+
+1. Download from [obsidian.md](https://obsidian.md) (Windows/Mac/Linux)
+2. Install and open it
+3. No account required - works 100% offline
+
+#### Step 5: Export to Obsidian Vault
+
+**Via CLI:**
+
+```bash
+# Full export
+skillmind export ~/Documents/MyWiki
+
+# Incremental sync (only new memories)
+skillmind sync --vault ~/Documents/MyWiki
+```
+
+**Via MCP tools (inside Claude Code):**
+
+```
+> export all my memories to an Obsidian vault at ~/Documents/MyWiki
+```
+
+Claude Code will call `export_obsidian` automatically.
+
+#### Step 6: Open the Vault in Obsidian
+
+1. Open Obsidian
+2. Click **"Open folder as vault"**
+3. Select the vault folder (e.g. `~/Documents/MyWiki`)
+4. Press **Ctrl+G** to open the knowledge graph
+5. Graph groups are pre-configured with colors per category
+
+#### Step 7: Keep it in Sync
+
+Every time you add new memories (via `remember`, `learn_youtube`, etc.), sync them:
+
+```bash
+skillmind sync
+```
+
+Or via MCP: `sync_obsidian`
+
+### What Gets Generated
+
+```
+MyWiki/
+├── .obsidian/             # Pre-configured: graph groups, bookmarks, plugins
+├── CLAUDE.md              # Wiki maintenance instructions for Claude
+├── raw/                   # Drop raw source material here (articles, PDFs)
+└── wiki/
+    ├── index.md           # Master index by category and topic
+    ├── log.md             # Operation history
+    ├── skills/            # Skill memories (green in graph)
+    ├── references/        # Reference memories (blue in graph)
+    ├── feedback/          # Feedback memories (teal in graph)
+    ├── projects/          # Project memories (orange in graph)
+    ├── users/             # User profile memories (purple in graph)
+    └── topics/            # Topic MOC pages (light blue in graph)
+```
+
+**Each wiki page includes:**
+- YAML frontmatter with Obsidian-native `tags`, `created`, `updated` dates
+- `[[Wikilinks]]` to related memories across categories
+- Topic and category backlinks
+- `#hashtags` for quick filtering
+- Confidence scores and source metadata
+
+**Graph groups (pre-configured colors):**
+| Category | Color | Obsidian Query |
+|---|---|---|
+| Skills | Green | `path:wiki/skills` |
+| References | Blue | `path:wiki/references` |
+| Feedback | Teal | `path:wiki/feedback` |
+| Projects | Orange | `path:wiki/projects` |
+| Users | Purple | `path:wiki/users` |
+| Topics (MOC) | Light Blue | `path:wiki/topics` |
+| Index pages | Yellow | `tag:#MOC` |
+
+### Optional: YouTube Learning with Proxy
+
+If YouTube blocks direct connections, add [ScraperAPI](https://www.scraperapi.com/pricing?fp_ref=antonio28) proxy support:
+
+```bash
+# In .env
+VPN_PROXY_API_KEY=your-scraperapi-key
+SCRAPER_Vendor=scraperapi
+```
+
+Then learn from YouTube videos:
+
+```bash
+skillmind learn-youtube "https://youtube.com/watch?v=..."
+skillmind learn-youtube-channel "UCxxxxx" --limit 5
+```
+
+The extracted knowledge is auto-stored as memories and can be synced to your Obsidian vault.
 
 ## Built-in Sanitizer
 
