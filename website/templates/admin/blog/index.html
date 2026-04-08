@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Blog Posts — SkillMind Admin</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { background:#0c1115; color:#e2e8f0; font-family:'Inter',sans-serif; padding:2rem; }
+        .header { display:flex; justify-content:space-between; align-items:center; margin-bottom:2rem; }
+        h1 { font-size:1.8rem; }
+        .btn { display:inline-block; padding:0.6rem 1.2rem; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.9rem; cursor:pointer; border:none; }
+        .btn-primary { background:#f6571e; color:#fff; }
+        .btn-primary:hover { background:#e5491a; }
+        .btn-sm { padding:0.4rem 0.8rem; font-size:0.8rem; }
+        .btn-ghost { background:transparent; border:1px solid rgba(255,255,255,0.12); color:#94a3b8; }
+        .btn-ghost:hover { border-color:#f6571e; color:#f6571e; }
+        table { width:100%; border-collapse:collapse; background:#16181d; border-radius:12px; overflow:hidden; }
+        th { background:#f6571e; color:#fff; padding:0.75rem 1rem; text-align:left; font-size:0.85rem; text-transform:uppercase; }
+        td { padding:0.75rem 1rem; border-bottom:1px solid rgba(255,255,255,0.04); font-size:0.9rem; }
+        tr:hover td { background:rgba(255,255,255,0.02); }
+        .status { padding:3px 10px; border-radius:20px; font-size:0.75rem; font-weight:600; }
+        .status-published { background:#1abc9c22; color:#1abc9c; }
+        .status-draft { background:#f6571e22; color:#f6571e; }
+        .actions { display:flex; gap:0.5rem; }
+        a { color:#f6571e; text-decoration:none; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Blog Posts</h1>
+        <div>
+            <a href="/" class="btn btn-ghost btn-sm">Site</a>
+            <a href="{{ url_for('blog_admin.logout') }}" class="btn btn-ghost btn-sm">Logout</a>
+            <a href="{{ url_for('blog_admin.new') }}" class="btn btn-primary">+ New Post</a>
+        </div>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Title</th>
+                <th>Lang</th>
+                <th>Status</th>
+                <th>Words</th>
+                <th>Published</th>
+                <th>Updated</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for post in posts %}
+            <tr>
+                <td><a href="{{ url_for('blog_admin.edit', post_id=post.id) }}">{{ post.title[:60] }}</a></td>
+                <td>{{ post.language|upper }}</td>
+                <td><span class="status status-{{ post.status }}">{{ post.status }}</span></td>
+                <td>{{ post.word_count }}</td>
+                <td>{{ post.published_at.strftime('%Y-%m-%d') if post.published_at else '—' }}</td>
+                <td>{{ post.updated_at.strftime('%Y-%m-%d %H:%M') if post.updated_at else '' }}</td>
+                <td class="actions">
+                    <a href="{{ url_for('blog_admin.edit', post_id=post.id) }}" class="btn btn-ghost btn-sm">Edit</a>
+                    {% if post.status == 'draft' %}
+                    <button class="btn btn-primary btn-sm" onclick="publishPost({{ post.id }})">Publish</button>
+                    {% else %}
+                    <button class="btn btn-ghost btn-sm" onclick="unpublishPost({{ post.id }})">Unpublish</button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not posts %}
+            <tr><td colspan="7" style="text-align:center;color:#64748b;padding:2rem;">No posts yet. Create your first one!</td></tr>
+            {% endif %}
+        </tbody>
+    </table>
+
+    <script>
+    async function publishPost(id) {
+        await fetch(`/admin/blog/${id}/publish`, {method:'POST'});
+        location.reload();
+    }
+    async function unpublishPost(id) {
+        await fetch(`/admin/blog/${id}/unpublish`, {method:'POST'});
+        location.reload();
+    }
+    </script>
+</body>
+</html>

@@ -16,7 +16,7 @@
         "name": "{{ post.author }}",
         "url": "https://antonioblago.de"
     },
-    "datePublished": "{{ post.date }}",
+    "datePublished": "{{ post.published_at or post.date }}",
     "publisher": {
         "@type": "Organization",
         "name": "SkillMind",
@@ -68,7 +68,7 @@
             <div class="blog-meta">
                 <span>{{ post.author }}</span>
                 <span>&bull;</span>
-                <span>{{ post.date }}</span>
+                <span>{{ (post.published_at or post.date)|string|truncate(10, True, '') }}</span>
                 {% if post.reading_time %}
                 <span>&bull;</span>
                 <span>{{ post.reading_time }} min read</span>

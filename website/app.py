@@ -1,17 +1,16 @@
 """
 SkillMind Website — Flask + Babel multi-language (EN/DE).
-Deploy on PythonAnywhere EU.
+Blog CMS with TinyMCE + MySQL on PythonAnywhere EU.
 """
 
+import json
 import os
-from pathlib import Path
 
-import yaml
 from flask import Flask, render_template, redirect, request, g, url_for, abort
 from flask_babel import Babel, gettext as _
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "skillmind-web-2026"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "skillmind-web-2026")
 app.config["BABEL_DEFAULT_LOCALE"] = "en"
 app.config["BABEL_SUPPORTED_LOCALES"] = ["en", "de"]
 app.config["BABEL_TRANSLATION_DIRECTORIES"] = "translations"
@@ -28,6 +27,29 @@ def get_locale():
 
 
 babel = Babel(app, locale_selector=get_locale)
+
+# ── Blog Admin (TinyMCE CMS) ─────────────────────────────────
+
+from blog_admin import admin_bp  # noqa: E402
+app.register_blueprint(admin_bp)
+
+# Initialize DB tables on first request
+_db_initialized = False
+
+
+@app.before_request
+def ensure_db():
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            from database import init_db
+            init_db()
+            _db_initialized = True
+        except Exception:
+            pass  # DB not available (local dev without MySQL)
+
+
+# ── Static Pages ─────────────────────────────────────────────
 
 
 @app.route("/")
@@ -60,44 +82,7 @@ def features(lang):
     return render_template("features.html", lang=lang)
 
 
-# ── Blog ──────────────────────────────────────────────────────
-
-BLOG_DIR = Path(__file__).parent / "content" / "blog"
-
-
-def _load_blog_posts(lang: str) -> list[dict]:
-    """Load all blog posts for a language, sorted by date desc."""
-    posts = []
-    blog_path = BLOG_DIR / lang
-    if not blog_path.exists():
-        return posts
-    for f in sorted(blog_path.glob("*.yml"), reverse=True):
-        try:
-            with open(f, encoding="utf-8") as fh:
-                meta = yaml.safe_load(fh)
-            if meta and meta.get("status") == "published":
-                meta["slug"] = f.stem
-                posts.append(meta)
-        except Exception:
-            continue
-    return posts
-
-
-def _load_blog_post(lang: str, slug: str) -> dict | None:
-    """Load a single blog post by slug."""
-    meta_path = BLOG_DIR / lang / f"{slug}.yml"
-    content_path = BLOG_DIR / lang / f"{slug}.html"
-    if not meta_path.exists() or not content_path.exists():
-        return None
-    try:
-        with open(meta_path, encoding="utf-8") as f:
-            meta = yaml.safe_load(f)
-        with open(content_path, encoding="utf-8") as f:
-            meta["content"] = f.read()
-        meta["slug"] = slug
-        return meta
-    except Exception:
-        return None
+# ── Blog (MySQL-backed) ──────────────────────────────────────
 
 
 @app.route("/<lang>/blog/")
@@ -105,7 +90,19 @@ def blog_index(lang):
     if lang not in SUPPORTED:
         return redirect("/en/blog/")
     g.lang = lang
-    posts = _load_blog_posts(lang)
+    try:
+        from database import get_posts
+        posts = get_posts(language=lang, status="published")
+        # Parse JSON fields for template
+        for p in posts:
+            for field in ("categories", "tags"):
+                if isinstance(p.get(field), str):
+                    try:
+                        p[field] = json.loads(p[field])
+                    except (json.JSONDecodeError, TypeError):
+                        p[field] = []
+    except Exception:
+        posts = []
     return render_template("blog_index.html", lang=lang, posts=posts)
 
 
@@ -114,8 +111,19 @@ def blog_post(lang, slug):
     if lang not in SUPPORTED:
         return redirect(f"/en/blog/{slug}/")
     g.lang = lang
-    post = _load_blog_post(lang, slug)
-    if not post:
+    try:
+        from database import get_post_by_slug
+        post = get_post_by_slug(slug, language=lang)
+        if not post:
+            abort(404)
+        # Parse JSON fields
+        for field in ("categories", "tags"):
+            if isinstance(post.get(field), str):
+                try:
+                    post[field] = json.loads(post[field])
+                except (json.JSONDecodeError, TypeError):
+                    post[field] = []
+    except Exception:
         abort(404)
     return render_template("blog_post.html", lang=lang, post=post)
 
