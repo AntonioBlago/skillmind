@@ -165,6 +165,34 @@ skillmind learn-video recording.mp4
 skillmind record-screen --duration 60 --fps 15
 ```
 
+## Proxy Support (ScraperAPI)
+
+YouTube learning supports proxy routing via [ScraperAPI](https://www.scraperapi.com/pricing?fp_ref=antonio28) to avoid rate limiting or geo-restrictions.
+
+Add to your `.env` or MCP `env` config:
+
+```bash
+VPN_PROXY_API_KEY=your-scraperapi-key
+SCRAPER_Vendor=scraperapi
+```
+
+Or in `settings.json`:
+
+```json
+{
+  "mcpServers": {
+    "skillmind": {
+      "env": {
+        "VPN_PROXY_API_KEY": "your-scraperapi-key",
+        "SCRAPER_Vendor": "scraperapi"
+      }
+    }
+  }
+}
+```
+
+Get your API key at [scraperapi.com](https://www.scraperapi.com/pricing?fp_ref=antonio28). All YouTube metadata, transcript, and channel fetches are automatically routed through the proxy when configured.
+
 ## Built-in Sanitizer
 
 API keys, emails, phone numbers, IBANs, and PII are **automatically redacted** before storing:
