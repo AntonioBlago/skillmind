@@ -24,6 +24,7 @@ Each memory page has:
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import datetime
 from pathlib import Path
@@ -101,13 +102,15 @@ class ObsidianExporter:
             else:
                 stats["pages_created"] += 1
 
-        # Write index, topic pages, log, CLAUDE.md
+        # Write index, topic pages, log, CLAUDE.md, Obsidian config
         self._write_index(memories, topic_map, type_map)
         self._append_log(stats, len(memories))
 
         claude_md = self.vault_path / "CLAUDE.md"
         if not claude_md.exists():
             self._write_claude_md(claude_md)
+
+        self._write_obsidian_config(memories)
 
         return stats
 
@@ -470,6 +473,126 @@ pages to find answers across all categories.
 - `#hashtags` used for quick filtering in Obsidian
 """
         path.write_text(content, encoding="utf-8")
+
+    # ── Obsidian Config (.obsidian/) ─────────────────────────────
+
+    def _write_obsidian_config(self, memories: list[Memory]) -> None:
+        """Write .obsidian/ config with graph groups, bookmarks, and appearance."""
+        obsidian_dir = self.vault_path / ".obsidian"
+        obsidian_dir.mkdir(exist_ok=True)
+
+        # Collect unique topics for graph groups
+        topics = sorted({m.topic for m in memories})
+
+        # ── Graph view config with colored groups ──
+        graph_config = {
+            "collapse-filter": False,
+            "search": "",
+            "showTags": True,
+            "showAttachments": False,
+            "hideUnresolved": False,
+            "showOrphans": True,
+            "collapse-color-groups": False,
+            "colorGroups": [
+                # Category groups (by folder path)
+                {"query": "path:wiki/skills", "color": {"a": 1, "rgb": 1745920}},       # Orange #1A9F00 -> actually let me use proper colors
+                {"query": "path:wiki/references", "color": {"a": 1, "rgb": 3116773}},    # Blue
+                {"query": "path:wiki/feedback", "color": {"a": 1, "rgb": 1752220}},      # Teal
+                {"query": "path:wiki/projects", "color": {"a": 1, "rgb": 16087326}},     # Orange-red
+                {"query": "path:wiki/users", "color": {"a": 1, "rgb": 8323327}},         # Purple
+                {"query": "path:wiki/topics", "color": {"a": 1, "rgb": 5592575}},        # Light blue
+                # Tag groups
+                {"query": "tag:#MOC", "color": {"a": 1, "rgb": 16776960}},               # Yellow
+                {"query": "tag:#index", "color": {"a": 1, "rgb": 16777215}},             # White
+            ],
+            "collapse-display": False,
+            "showArrow": True,
+            "textFadeMultiplier": 0,
+            "nodeSizeMultiplier": 1.2,
+            "lineSizeMultiplier": 1,
+            "collapse-forces": False,
+            "centerStrength": 0.5,
+            "repelStrength": 10,
+            "linkStrength": 1,
+            "linkDistance": 250,
+            "scale": 1,
+            "close": False,
+        }
+
+        (obsidian_dir / "graph.json").write_text(
+            json.dumps(graph_config, indent=2), encoding="utf-8"
+        )
+
+        # ── App settings ──
+        app_config = {
+            "showLineNumber": True,
+            "strictLineBreaks": False,
+            "readableLineLength": True,
+            "showFrontmatter": False,
+            "foldHeading": True,
+            "foldIndent": True,
+            "defaultViewMode": "preview",
+            "livePreview": True,
+        }
+
+        (obsidian_dir / "app.json").write_text(
+            json.dumps(app_config, indent=2), encoding="utf-8"
+        )
+
+        # ── Appearance (dark theme) ──
+        appearance_config = {
+            "baseFontSize": 16,
+            "theme": "obsidian",
+        }
+
+        (obsidian_dir / "appearance.json").write_text(
+            json.dumps(appearance_config, indent=2), encoding="utf-8"
+        )
+
+        # ── Bookmarks (pin key pages) ──
+        bookmarks = {
+            "items": [
+                {"type": "file", "ctime": 0, "path": "wiki/index.md", "title": "Wiki Index"},
+                {"type": "file", "ctime": 0, "path": "wiki/log.md", "title": "Operation Log"},
+                {"type": "file", "ctime": 0, "path": "CLAUDE.md", "title": "Wiki Instructions"},
+            ]
+        }
+
+        # Add category index bookmarks
+        for mt in [MemoryType.SKILL, MemoryType.REFERENCE, MemoryType.FEEDBACK, MemoryType.PROJECT, MemoryType.USER]:
+            folder, label = TYPE_FOLDERS[mt]
+            bookmarks["items"].append({
+                "type": "file", "ctime": 0,
+                "path": f"wiki/{folder}/_{label}_.md",
+                "title": label,
+            })
+
+        (obsidian_dir / "bookmarks.json").write_text(
+            json.dumps(bookmarks, indent=2), encoding="utf-8"
+        )
+
+        # ── Core plugins (enable graph, bookmarks, tags, search) ──
+        core_plugins = [
+            "file-explorer", "global-search", "graph", "tag-pane",
+            "bookmarks", "outline", "backlink", "page-preview",
+            "command-palette", "editor-status", "word-count",
+        ]
+
+        (obsidian_dir / "core-plugins.json").write_text(
+            json.dumps(core_plugins, indent=2), encoding="utf-8"
+        )
+
+        # ── Starred / pinned for older Obsidian versions ──
+        starred = {
+            "items": [
+                {"type": "file", "path": "wiki/index.md"},
+                {"type": "file", "path": "wiki/log.md"},
+            ]
+        }
+
+        (obsidian_dir / "starred.json").write_text(
+            json.dumps(starred, indent=2), encoding="utf-8"
+        )
 
     # ── Helpers ───────────────────────────────────────────────────
 
