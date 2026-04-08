@@ -37,6 +37,7 @@ class YouTubeLearner:
     - Channel batch learning (latest N videos)
     - Playlist learning
     - Podcast episodes (long-form, chunked)
+    - ScraperAPI proxy support (set VPN_PROXY_API_KEY + SCRAPER_Vendor=scraperapi)
     """
 
     def __init__(
@@ -50,6 +51,32 @@ class YouTubeLearner:
         self.language = language
         self.api_key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.claude_model = claude_model
+
+        # Proxy config (ScraperAPI or generic)
+        self._proxy_url = self._build_proxy_url()
+
+    def _build_proxy_url(self) -> str | None:
+        """Build proxy URL from environment variables."""
+        vendor = os.environ.get("SCRAPER_Vendor", "").lower()
+        api_key = os.environ.get("VPN_PROXY_API_KEY", "")
+
+        if vendor == "scraperapi" and api_key:
+            return f"http://scraperapi:{api_key}@proxy-server.scraperapi.com:8001"
+
+        # Generic proxy fallback
+        return os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
+
+    def _get_proxies_dict(self) -> dict | None:
+        """Get requests-compatible proxies dict."""
+        if not self._proxy_url:
+            return None
+        return {"http": self._proxy_url, "https": self._proxy_url}
+
+    def _get_ytdlp_proxy_args(self) -> list[str]:
+        """Get yt-dlp --proxy arguments."""
+        if not self._proxy_url:
+            return []
+        return ["--proxy", self._proxy_url]
 
     # ── Async wrappers (prevent blocking MCP event loop) ─────────
 
@@ -217,8 +244,16 @@ class YouTubeLearner:
         # Method 1: youtube-transcript-api (faster, simpler)
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
+            from youtube_transcript_api.proxies import GenericProxyConfig
 
-            ytt = YouTubeTranscriptApi()
+            # Use proxy if configured
+            if self._proxy_url:
+                ytt = YouTubeTranscriptApi(proxy_config=GenericProxyConfig(
+                    http_url=self._proxy_url,
+                    https_url=self._proxy_url,
+                ))
+            else:
+                ytt = YouTubeTranscriptApi()
             try:
                 entries = ytt.fetch(video_id, languages=[self.language, "en", "de"])
                 return " ".join(entry.text for entry in entries)
@@ -230,7 +265,7 @@ class YouTubeLearner:
         except Exception:
             pass
 
-        # Method 2: yt-dlp (better for long videos, auto-subs)
+        # Method 2: yt-dlp with proxy (better for long videos, auto-subs)
         try:
             return self._get_transcript_ytdlp(video_id)
         except Exception:
@@ -246,6 +281,7 @@ class YouTubeLearner:
             url = f"https://www.youtube.com/watch?v={video_id}"
             cmd = [
                 sys.executable, "-m", "yt_dlp",
+                *self._get_ytdlp_proxy_args(),
                 "--write-auto-sub",
                 "--sub-lang", f"{self.language},en",
                 "--sub-format", "json3",
@@ -274,10 +310,11 @@ class YouTubeLearner:
 
     def _get_metadata(self, video_id: str) -> dict:
         """Get video metadata via yt-dlp (rich) or oEmbed (basic fallback)."""
-        # Try yt-dlp first (richer metadata)
+        # Try yt-dlp first (richer metadata), with proxy if configured
         try:
             cmd = [
                 sys.executable, "-m", "yt_dlp",
+                *self._get_ytdlp_proxy_args(),
                 "--dump-json", "--skip-download",
                 f"https://www.youtube.com/watch?v={video_id}",
             ]
@@ -296,12 +333,12 @@ class YouTubeLearner:
         except Exception:
             pass
 
-        # Fallback: oEmbed (no API key needed)
+        # Fallback: oEmbed with proxy
         try:
             import requests
 
             url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
-            resp = requests.get(url, timeout=10)
+            resp = requests.get(url, timeout=10, proxies=self._get_proxies_dict())
             resp.raise_for_status()
             data = resp.json()
             return {
@@ -419,7 +456,7 @@ Antworte NUR mit dem YAML-Block."""
             import requests
 
             rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            resp = requests.get(rss_url, timeout=15)
+            resp = requests.get(rss_url, timeout=15, proxies=self._get_proxies_dict())
             resp.raise_for_status()
 
             root = ET.fromstring(resp.text)
@@ -446,6 +483,7 @@ Antworte NUR mit dem YAML-Block."""
         try:
             cmd = [
                 sys.executable, "-m", "yt_dlp",
+                *self._get_ytdlp_proxy_args(),
                 "--dump-json", "--flat-playlist",
                 "--playlist-items", f"1-{max_results}",
                 playlist_url,
