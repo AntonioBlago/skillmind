@@ -298,7 +298,7 @@ def create_server():
     # ─── Video & YouTube Learning Tools ───────────────────────────
 
     @mcp.tool()
-    def learn_youtube(
+    async def learn_youtube(
         video_url: str,
         topic: str = "",
         tags: str = "",
@@ -316,7 +316,7 @@ def create_server():
 
         yt = YouTubeLearner(trainer=trainer)
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
-        memories = yt.learn(video_url, force_topic=topic or None, tags=tag_list)
+        memories = await yt.learn_async(video_url, force_topic=topic or None, tags=tag_list)
         return json.dumps({
             "status": "learned",
             "memories_created": len(memories),
@@ -327,7 +327,7 @@ def create_server():
         }, indent=2)
 
     @mcp.tool()
-    def learn_youtube_channel(
+    async def learn_youtube_channel(
         channel_id: str,
         max_videos: int = 5,
         topic: str = "",
@@ -343,7 +343,7 @@ def create_server():
         from ..video.youtube_learner import YouTubeLearner
 
         yt = YouTubeLearner(trainer=trainer)
-        memories = yt.learn_channel(channel_id, max_videos, force_topic=topic or None)
+        memories = await yt.learn_channel_async(channel_id, max_videos, force_topic=topic or None)
         return json.dumps({
             "status": "learned",
             "memories_created": len(memories),

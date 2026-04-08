@@ -14,6 +14,7 @@ Usage:
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import os
@@ -49,6 +50,26 @@ class YouTubeLearner:
         self.language = language
         self.api_key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.claude_model = claude_model
+
+    # ── Async wrappers (prevent blocking MCP event loop) ─────────
+
+    async def learn_async(
+        self,
+        video_url: str,
+        force_topic: str | None = None,
+        tags: list[str] | None = None,
+    ) -> list[Memory]:
+        """Non-blocking version of learn() for use in async MCP tools."""
+        return await asyncio.to_thread(self.learn, video_url, force_topic, tags)
+
+    async def learn_channel_async(
+        self,
+        channel_id: str,
+        max_videos: int = 5,
+        force_topic: str | None = None,
+    ) -> list[Memory]:
+        """Non-blocking version of learn_channel() for use in async MCP tools."""
+        return await asyncio.to_thread(self.learn_channel, channel_id, max_videos, force_topic)
 
     # ── Single Video ──────────────────────────────────────────────
 
@@ -232,7 +253,7 @@ class YouTubeLearner:
                 "--output", os.path.join(tmpdir, f"sub_{video_id}"),
                 url,
             ]
-            subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            subprocess.run(cmd, capture_output=True, text=True, timeout=60)
 
             for lang in [self.language, "en"]:
                 sub_path = os.path.join(tmpdir, f"sub_{video_id}.{lang}.json3")
