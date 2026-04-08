@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="{{ lang }}">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}SkillMind — {{ _('Active Memory Layer for AI') }}{% endblock %}</title>
+    <meta name="description" content="{% block description %}{{ _('SkillMind: Active Skill Listener & Trainer. Structured vector-database memory for Claude Code and AI coding assistants.') }}{% endblock %}">
+    <meta property="og:title" content="SkillMind — {{ _('Active Memory Layer for AI') }}">
+    <meta property="og:url" content="https://skill-mind.com/">
+    <meta property="og:type" content="website">
+    <meta name="theme-color" content="#f6571e">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="nav">
+        <div class="nav__inner">
+            <a href="/{{ lang }}/" class="nav__logo">
+                <div class="nav__logo-icon">SM</div>
+                SkillMind
+            </a>
+            <ul class="nav__links">
+                <li><a href="#features">{{ _('Features') }}</a></li>
+                <li><a href="#backends">{{ _('Backends') }}</a></li>
+                <li><a href="#tools">{{ _('MCP Tools') }}</a></li>
+                <li><a href="#quickstart">{{ _('Quick Start') }}</a></li>
+                <li><a href="/{{ lang }}/blog/">Blog</a></li>
+                <li><a href="https://github.com/AntonioBlago/skillmind" target="_blank">GitHub</a></li>
+            </ul>
+            <div class="nav__right">
+                <div class="nav__lang">
+                    <a href="/en/" class="{{ 'active' if lang == 'en' }}">EN</a>
+                    <a href="/de/" class="{{ 'active' if lang == 'de' }}">DE</a>
+                </div>
+                <a href="https://github.com/AntonioBlago/skillmind" class="btn btn--primary btn--sm" target="_blank">
+                    GitHub &rarr;
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    {% block content %}{% endblock %}
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer__grid">
+                <div>
+                    <div class="footer__brand-name">
+                        <div class="nav__logo-icon" style="width:28px;height:28px;font-size:0.8rem;">SM</div>
+                        SkillMind
+                    </div>
+                    <p class="footer__brand-desc">{{ _('Active Skill Listener & Trainer — structured memory layer for AI coding assistants.') }}</p>
+                    <p class="footer__brand-stats">v0.1.0 &bull; 5 {{ _('Backends') }} &bull; 14 {{ _('MCP Tools') }} &bull; MIT License</p>
+                </div>
+                <div>
+                    <h4 class="footer__col-title">{{ _('Product') }}</h4>
+                    <ul class="footer__links">
+                        <li><a href="/{{ lang }}/#features">{{ _('Features') }}</a></li>
+                        <li><a href="/{{ lang }}/#backends">{{ _('Backends') }}</a></li>
+                        <li><a href="/{{ lang }}/#tools">{{ _('MCP Tools') }}</a></li>
+                        <li><a href="/{{ lang }}/docs/">{{ _('Documentation') }}</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="footer__col-title">{{ _('Resources') }}</h4>
+                    <ul class="footer__links">
+                        <li><a href="/{{ lang }}/#quickstart">{{ _('Quick Start') }}</a></li>
+                        <li><a href="https://github.com/AntonioBlago/skillmind#installation">{{ _('Installation') }}</a></li>
+                        <li><a href="https://github.com/AntonioBlago/skillmind/blob/main/CLAUDE.md">CLAUDE.md</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h4 class="footer__col-title">Community</h4>
+                    <ul class="footer__links">
+                        <li><a href="https://github.com/AntonioBlago/skillmind" target="_blank">GitHub</a></li>
+                        <li><a href="https://github.com/AntonioBlago/skillmind/issues" target="_blank">Issues</a></li>
+                        <li><a href="https://pypi.org/project/skillmind/" target="_blank">PyPI</a></li>
+                        <li><a href="https://antonioblago.de" target="_blank">Antonio Blago</a></li>
+                    </ul>
+                </div>
+            </div>
+            <div class="footer__bottom">
+                <span>&copy; 2026 SkillMind. MIT License. {{ _('Built by') }} <a href="https://antonioblago.de">Antonio Blago</a></span>
+                <div class="footer__social">
+                    <a href="https://github.com/AntonioBlago/skillmind" target="_blank" title="GitHub">GH</a>
+                    <a href="https://linkedin.com/in/antonioblago" target="_blank" title="LinkedIn">LI</a>
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

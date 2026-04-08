@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}SkillMind — {{ _('Features') }}{% endblock %}
+
+{% block content %}
+<section class="hero" style="padding: 140px 0 60px;">
+    <div class="container">
+        <h1 class="hero__title">{{ _('Features') }}</h1>
+        <p class="hero__sub">{{ _('Everything Your AI Memory Needs') }}</p>
+        <div class="hero__ctas">
+            <a href="/{{ lang }}/#features" class="btn btn--primary">{{ _('Features') }} &rarr;</a>
+        </div>
+    </div>
+</section>
+{% endblock %}

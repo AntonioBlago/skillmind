@@ -1,0 +1,22 @@
+title: "How to Build an AI-Powered Obsidian Wiki with SkillMind"
+excerpt: "Turn your AI assistant's memory into a visual knowledge graph. Export SkillMind memories to Obsidian with wikilinks, topic maps, and color-coded graph groups - inspired by Andrej Karpathy's LLM wiki pattern."
+meta_description: "Build an AI second brain with SkillMind and Obsidian. Export vector DB memories as interlinked wiki pages with graph visualization. Karpathy LLM wiki pattern made easy."
+date: "2026-04-08"
+author: "Antonio Blago"
+status: published
+reading_time: 8
+featured_image: "img/obsidian-knowledge-graph.png"
+categories:
+  - Tutorial
+  - AI Knowledge Management
+tags:
+  - obsidian
+  - knowledge-graph
+  - second-brain
+  - karpathy
+  - llm-wiki
+  - mcp
+  - claude-code
+  - vector-database
+  - rag
+  - personal-wiki

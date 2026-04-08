@@ -1,0 +1,22 @@
+title: "KI-Wissensgraph mit Obsidian und SkillMind aufbauen"
+excerpt: "Verwandle das Gedaechtnis deines KI-Assistenten in einen visuellen Wissensgraphen. Exportiere SkillMind-Erinnerungen nach Obsidian mit Wikilinks, Topic Maps und farbcodierten Graph-Gruppen - inspiriert von Andrej Karpathys LLM Wiki Pattern."
+meta_description: "Baue ein KI-Second-Brain mit SkillMind und Obsidian. Exportiere Vektor-DB-Erinnerungen als verlinkte Wiki-Seiten mit Graph-Visualisierung. Karpathy LLM Wiki Pattern leicht gemacht."
+date: "2026-04-08"
+author: "Antonio Blago"
+status: published
+reading_time: 8
+featured_image: "img/obsidian-knowledge-graph.png"
+categories:
+  - Tutorial
+  - KI-Wissensmanagement
+tags:
+  - obsidian
+  - wissensgraph
+  - second-brain
+  - karpathy
+  - llm-wiki
+  - mcp
+  - claude-code
+  - vektor-datenbank
+  - rag
+  - persoenliches-wiki
