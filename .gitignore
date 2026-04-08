@@ -47,6 +47,5 @@ recordings/
 test_vault/
 *_vault/
 
-# Website build artifacts
-website/__pycache__/
-website/*.pyc
+# Website (private repo: AntonioBlago/skillmind-website)
+website/

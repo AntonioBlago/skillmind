@@ -1,5 +1,0 @@
-flask>=3.0
-flask-babel>=4.0
-gunicorn>=21.0
-pyyaml>=6.0
-pymysql>=1.1
