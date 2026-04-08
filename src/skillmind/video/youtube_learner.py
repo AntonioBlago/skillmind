@@ -53,30 +53,46 @@ class YouTubeLearner:
         self.claude_model = claude_model
 
         # Proxy config (ScraperAPI or generic)
+        self._scraper_api_key = self._get_scraper_api_key()
         self._proxy_url = self._build_proxy_url()
+
+    def _get_scraper_api_key(self) -> str | None:
+        """Get ScraperAPI key if configured."""
+        vendor = os.environ.get("SCRAPER_Vendor", "").lower()
+        api_key = os.environ.get("VPN_PROXY_API_KEY", "")
+        if vendor == "scraperapi" and api_key:
+            return api_key
+        return None
 
     def _build_proxy_url(self) -> str | None:
         """Build proxy URL from environment variables."""
-        vendor = os.environ.get("SCRAPER_Vendor", "").lower()
-        api_key = os.environ.get("VPN_PROXY_API_KEY", "")
-
-        if vendor == "scraperapi" and api_key:
-            return f"http://scraperapi:{api_key}@proxy-server.scraperapi.com:8001"
-
-        # Generic proxy fallback
+        if self._scraper_api_key:
+            return f"http://scraperapi:{self._scraper_api_key}@proxy-server.scraperapi.com:8001"
         return os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
 
-    def _get_proxies_dict(self) -> dict | None:
-        """Get requests-compatible proxies dict."""
-        if not self._proxy_url:
-            return None
-        return {"http": self._proxy_url, "https": self._proxy_url}
+    def _scraper_fetch(self, url: str, timeout: int = 30) -> str:
+        """Fetch a URL via ScraperAPI direct URL mode (avoids SSL issues)."""
+        import requests
+
+        if self._scraper_api_key:
+            api_url = f"http://api.scraperapi.com?api_key={self._scraper_api_key}&url={url}"
+            resp = requests.get(api_url, timeout=timeout)
+        elif self._proxy_url:
+            proxies = {"http": self._proxy_url, "https": self._proxy_url}
+            resp = requests.get(url, timeout=timeout, proxies=proxies)
+        else:
+            resp = requests.get(url, timeout=timeout)
+        resp.raise_for_status()
+        return resp.text
 
     def _get_ytdlp_proxy_args(self) -> list[str]:
-        """Get yt-dlp --proxy arguments."""
+        """Get yt-dlp --proxy arguments (with --no-check-certificates for ScraperAPI)."""
         if not self._proxy_url:
             return []
-        return ["--proxy", self._proxy_url]
+        args = ["--proxy", self._proxy_url]
+        if self._scraper_api_key:
+            args.append("--no-check-certificates")
+        return args
 
     # ── Async wrappers (prevent blocking MCP event loop) ─────────
 
@@ -244,10 +260,11 @@ class YouTubeLearner:
         # Method 1: youtube-transcript-api (faster, simpler)
         try:
             from youtube_transcript_api import YouTubeTranscriptApi
-            from youtube_transcript_api.proxies import GenericProxyConfig
 
-            # Use proxy if configured
-            if self._proxy_url:
+            # Note: GenericProxyConfig causes SSL errors with ScraperAPI,
+            # so we only use it for non-ScraperAPI proxies
+            if self._proxy_url and not self._scraper_api_key:
+                from youtube_transcript_api.proxies import GenericProxyConfig
                 ytt = YouTubeTranscriptApi(proxy_config=GenericProxyConfig(
                     http_url=self._proxy_url,
                     https_url=self._proxy_url,
@@ -333,14 +350,10 @@ class YouTubeLearner:
         except Exception:
             pass
 
-        # Fallback: oEmbed with proxy
+        # Fallback: oEmbed via ScraperAPI direct URL mode
         try:
-            import requests
-
-            url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
-            resp = requests.get(url, timeout=10, proxies=self._get_proxies_dict())
-            resp.raise_for_status()
-            data = resp.json()
+            oembed_url = f"https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v={video_id}&format=json"
+            data = json.loads(self._scraper_fetch(oembed_url, timeout=15))
             return {
                 "title": data.get("title", ""),
                 "author": data.get("author_name", ""),
@@ -453,13 +466,10 @@ Antworte NUR mit dem YAML-Block."""
         import xml.etree.ElementTree as ET
 
         try:
-            import requests
-
             rss_url = f"https://www.youtube.com/feeds/videos.xml?channel_id={channel_id}"
-            resp = requests.get(rss_url, timeout=15, proxies=self._get_proxies_dict())
-            resp.raise_for_status()
+            rss_text = self._scraper_fetch(rss_url, timeout=15)
 
-            root = ET.fromstring(resp.text)
+            root = ET.fromstring(rss_text)
             ns = {
                 "atom": "http://www.w3.org/2005/Atom",
                 "yt": "http://www.youtube.com/xml/schemas/2015",
