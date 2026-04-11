@@ -256,29 +256,15 @@ class YouTubeLearner:
     # ── Transcript Extraction ─────────────────────────────────────
 
     def _get_transcript(self, video_id: str) -> str:
-        """Fetch transcript, trying youtube-transcript-api first, then yt-dlp."""
-        # Method 1: youtube-transcript-api (faster, simpler)
-        try:
-            from youtube_transcript_api import YouTubeTranscriptApi
+        """Fetch transcript, trying youtube-transcript-api first, then yt-dlp.
 
-            # Note: GenericProxyConfig causes SSL errors with ScraperAPI,
-            # so we only use it for non-ScraperAPI proxies
-            if self._proxy_url and not self._scraper_api_key:
-                from youtube_transcript_api.proxies import GenericProxyConfig
-                ytt = YouTubeTranscriptApi(proxy_config=GenericProxyConfig(
-                    http_url=self._proxy_url,
-                    https_url=self._proxy_url,
-                ))
-            else:
-                ytt = YouTubeTranscriptApi()
-            try:
-                entries = ytt.fetch(video_id, languages=[self.language, "en", "de"])
-                return " ".join(entry.text for entry in entries)
-            except Exception:
-                transcript_list = ytt.list(video_id)
-                first = next(iter(transcript_list))
-                entries = first.fetch()
-                return " ".join(entry.text for entry in entries)
+        Each method has explicit timeouts to prevent indefinite hangs.
+        """
+        # Method 1: youtube-transcript-api with timeout wrapper
+        try:
+            transcript = self._get_transcript_api(video_id)
+            if transcript:
+                return transcript
         except Exception:
             pass
 
@@ -289,6 +275,43 @@ class YouTubeLearner:
             pass
 
         return ""
+
+    def _get_transcript_api(self, video_id: str, timeout: int = 15) -> str:
+        """Fetch transcript via youtube-transcript-api with timeout protection."""
+        import concurrent.futures
+
+        from youtube_transcript_api import YouTubeTranscriptApi
+
+        # GenericProxyConfig causes SSL errors with ScraperAPI,
+        # so we only use it for non-ScraperAPI proxies
+        if self._proxy_url and not self._scraper_api_key:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            ytt = YouTubeTranscriptApi(proxy_config=GenericProxyConfig(
+                http_url=self._proxy_url,
+                https_url=self._proxy_url,
+            ))
+        else:
+            ytt = YouTubeTranscriptApi()
+
+        def _fetch() -> str:
+            try:
+                entries = ytt.fetch(video_id, languages=[self.language, "en", "de"])
+                return " ".join(entry.text for entry in entries)
+            except Exception:
+                transcript_list = ytt.list(video_id)
+                first = next(iter(transcript_list))
+                entries = first.fetch()
+                return " ".join(entry.text for entry in entries)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(_fetch)
+            try:
+                return future.result(timeout=timeout)
+            except concurrent.futures.TimeoutError:
+                future.cancel()
+                raise TimeoutError(
+                    f"youtube-transcript-api timed out after {timeout}s for {video_id}"
+                )
 
     def _get_transcript_ytdlp(self, video_id: str) -> str:
         """Fetch transcript via yt-dlp subtitles."""
