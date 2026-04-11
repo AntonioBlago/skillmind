@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skillmind"
-version = "0.3.1"
+version = "0.3.2"
 description = "Active Skill Listener & Trainer — structured memory layer for AI coding assistants"
 readme = "README.md"
 license = "MIT"

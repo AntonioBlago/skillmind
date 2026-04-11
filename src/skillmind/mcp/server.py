@@ -316,7 +316,22 @@ def create_server():
 
         yt = YouTubeLearner(trainer=trainer)
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+
+        # Fetch metadata + knowledge for markdown output
+        video_id = yt._extract_video_id(video_url)
+        metadata = yt._get_metadata(video_id)
         memories = await yt.learn_async(video_url, force_topic=topic or None, tags=tag_list)
+
+        # Build markdown from stored memory content
+        knowledge = {
+            "title": metadata.get("title", ""),
+            "topic": topic or "youtube",
+            "tags": tag_list or [],
+            "summary": memories[0].content if memories else "",
+            "key_takeaways": (memories[0].metadata or {}).get("key_takeaways", []) if memories else [],
+        }
+        markdown = yt.format_markdown(metadata, knowledge)
+
         return json.dumps({
             "status": "learned",
             "memories_created": len(memories),
@@ -324,6 +339,7 @@ def create_server():
                 {"id": m.id, "type": m.type.value, "title": m.title, "topic": m.topic}
                 for m in memories
             ],
+            "markdown": markdown,
         }, indent=2)
 
     @mcp.tool()

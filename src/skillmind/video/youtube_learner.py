@@ -133,10 +133,14 @@ class YouTubeLearner:
         5. Store as memories (skill + reference)
         """
         video_id = self._extract_video_id(video_url)
+        print(f"[SkillMind] 1/4 Fetching metadata for {video_id}...", flush=True)
         metadata = self._get_metadata(video_id)
+        title = metadata.get("title", video_id)
+        print(f"[SkillMind] 2/4 Fetching transcript: {title[:60]}...", flush=True)
         transcript = self._get_transcript(video_id)
 
         if not transcript:
+            print(f"[SkillMind] No transcript available, storing reference only", flush=True)
             # Store just the reference
             mem = self.trainer.learn(
                 content=f"YouTube video: {metadata.get('title', video_id)}\nURL: {metadata.get('url', video_url)}\nNo transcript available.",
@@ -149,9 +153,11 @@ class YouTubeLearner:
             return [mem] if mem else []
 
         # Extract knowledge
+        print(f"[SkillMind] 3/4 Extracting knowledge via Claude ({len(transcript)} chars)...", flush=True)
         knowledge = self._extract_knowledge(transcript, metadata)
         memories: list[Memory] = []
 
+        print(f"[SkillMind] 4/4 Storing memories...", flush=True)
         # Store main knowledge as a skill memory
         mem = self.trainer.learn(
             content=knowledge["summary"],
@@ -185,6 +191,9 @@ class YouTubeLearner:
             if mem:
                 memories.append(mem)
 
+        # Print markdown summary
+        self._print_markdown(metadata, knowledge)
+
         # Store video as reference
         ref_content = (
             f"YouTube: {metadata.get('title', '')}\n"
@@ -214,11 +223,14 @@ class YouTubeLearner:
         force_topic: str | None = None,
     ) -> list[Memory]:
         """Learn from the latest N videos of a YouTube channel."""
+        print(f"[SkillMind] Fetching channel video list ({channel_id})...", flush=True)
         videos = self._get_channel_videos(channel_id, max_videos)
+        print(f"[SkillMind] Found {len(videos)} videos to process", flush=True)
         all_memories: list[Memory] = []
 
-        for video in videos:
+        for i, video in enumerate(videos, 1):
             try:
+                print(f"\n[SkillMind] === Video {i}/{len(videos)}: {video.get('title', video['url'])[:60]} ===", flush=True)
                 memories = self.learn(
                     video["url"],
                     force_topic=force_topic,
@@ -226,7 +238,7 @@ class YouTubeLearner:
                 )
                 all_memories.extend(memories)
             except Exception as e:
-                print(f"Failed to learn from {video.get('title', video['url'])}: {e}")
+                print(f"[SkillMind] FAILED: {video.get('title', video['url'])}: {e}", flush=True)
                 continue
 
         return all_memories
@@ -253,6 +265,49 @@ class YouTubeLearner:
 
         return all_memories
 
+    # ── Markdown Output ───────────────────────────────────────────
+
+    @staticmethod
+    def format_markdown(metadata: dict, knowledge: dict) -> str:
+        """Format learning result as a readable markdown string."""
+        title = knowledge.get("title") or metadata.get("title", "YouTube Video")
+        author = metadata.get("author", "Unknown")
+        duration = metadata.get("duration", 0) // 60
+        url = metadata.get("url", "")
+        topic = knowledge.get("topic", "")
+        tags = knowledge.get("tags", [])
+        summary = knowledge.get("summary", "")
+        takeaways = knowledge.get("key_takeaways", [])
+
+        lines = [
+            f"# {title}",
+            f"**Author:** {author} | **Duration:** {duration} min | **Topic:** {topic}",
+        ]
+        if url:
+            lines.append(f"**URL:** {url}")
+        if tags:
+            lines.append(f"**Tags:** {', '.join(str(t) for t in tags)}")
+        lines.append("")
+
+        if takeaways:
+            lines.append("## Key Takeaways")
+            for i, t in enumerate(takeaways, 1):
+                lines.append(f"{i}. {t}")
+            lines.append("")
+
+        if summary:
+            lines.append("## Summary")
+            lines.append(summary.strip())
+            lines.append("")
+
+        return "\n".join(lines)
+
+    def _print_markdown(self, metadata: dict, knowledge: dict) -> None:
+        """Print markdown summary to stdout."""
+        print(f"\n{'=' * 60}", flush=True)
+        print(self.format_markdown(metadata, knowledge), flush=True)
+        print(f"{'=' * 60}\n", flush=True)
+
     # ── Transcript Extraction ─────────────────────────────────────
 
     def _get_transcript(self, video_id: str) -> str:
@@ -277,8 +332,12 @@ class YouTubeLearner:
         return ""
 
     def _get_transcript_api(self, video_id: str, timeout: int = 15) -> str:
-        """Fetch transcript via youtube-transcript-api with timeout protection."""
-        import concurrent.futures
+        """Fetch transcript via youtube-transcript-api with timeout protection.
+
+        Runs the blocking API call in a daemon thread so the main thread
+        can abandon it after `timeout` seconds without waiting for cleanup.
+        """
+        import threading
 
         from youtube_transcript_api import YouTubeTranscriptApi
 
@@ -293,25 +352,35 @@ class YouTubeLearner:
         else:
             ytt = YouTubeTranscriptApi()
 
-        def _fetch() -> str:
-            try:
-                entries = ytt.fetch(video_id, languages=[self.language, "en", "de"])
-                return " ".join(entry.text for entry in entries)
-            except Exception:
-                transcript_list = ytt.list(video_id)
-                first = next(iter(transcript_list))
-                entries = first.fetch()
-                return " ".join(entry.text for entry in entries)
+        result_container: list[str] = []
+        error_container: list[Exception] = []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(_fetch)
+        def _fetch() -> None:
             try:
-                return future.result(timeout=timeout)
-            except concurrent.futures.TimeoutError:
-                future.cancel()
-                raise TimeoutError(
-                    f"youtube-transcript-api timed out after {timeout}s for {video_id}"
-                )
+                try:
+                    entries = ytt.fetch(video_id, languages=[self.language, "en", "de"])
+                except Exception:
+                    transcript_list = ytt.list(video_id)
+                    first = next(iter(transcript_list))
+                    entries = first.fetch()
+                result_container.append(" ".join(entry.text for entry in entries))
+            except Exception as exc:
+                error_container.append(exc)
+
+        t = threading.Thread(target=_fetch, daemon=True)
+        t.start()
+        t.join(timeout=timeout)
+
+        if t.is_alive():
+            # Thread still running — abandon it (daemon thread dies with process)
+            raise TimeoutError(
+                f"youtube-transcript-api timed out after {timeout}s for {video_id}"
+            )
+        if error_container:
+            raise error_container[0]
+        if result_container:
+            return result_container[0]
+        return ""
 
     def _get_transcript_ytdlp(self, video_id: str) -> str:
         """Fetch transcript via yt-dlp subtitles."""
@@ -329,7 +398,7 @@ class YouTubeLearner:
                 "--output", os.path.join(tmpdir, f"sub_{video_id}"),
                 url,
             ]
-            subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            self._run_subprocess_safe(cmd, timeout=60)
 
             for lang in [self.language, "en"]:
                 sub_path = os.path.join(tmpdir, f"sub_{video_id}.{lang}.json3")
@@ -348,6 +417,17 @@ class YouTubeLearner:
 
     # ── Metadata ──────────────────────────────────────────────────
 
+    def _run_subprocess_safe(self, cmd: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+        """Run a subprocess with timeout, ensuring the process is killed on timeout."""
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        try:
+            stdout, stderr = proc.communicate(timeout=timeout)
+            return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+            raise
+
     def _get_metadata(self, video_id: str) -> dict:
         """Get video metadata via yt-dlp (rich) or oEmbed (basic fallback)."""
         # Try yt-dlp first (richer metadata), with proxy if configured
@@ -358,7 +438,7 @@ class YouTubeLearner:
                 "--dump-json", "--skip-download",
                 f"https://www.youtube.com/watch?v={video_id}",
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            result = self._run_subprocess_safe(cmd, timeout=30)
             if result.returncode == 0:
                 data = json.loads(result.stdout)
                 return {
@@ -450,6 +530,7 @@ Antworte NUR mit dem YAML-Block."""
             model=self.claude_model,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
+            timeout=120.0,
         )
 
         return self._parse_knowledge_yaml(response.content[0].text, metadata)
@@ -521,7 +602,7 @@ Antworte NUR mit dem YAML-Block."""
                 "--playlist-items", f"1-{max_results}",
                 playlist_url,
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            result = self._run_subprocess_safe(cmd, timeout=60)
             videos = []
             for line in result.stdout.strip().split("\n"):
                 if line.strip():
