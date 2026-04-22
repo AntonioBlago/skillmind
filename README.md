@@ -383,15 +383,15 @@ SkillMind works great alongside other MCP servers:
 
 | MCP Server | What it adds | Install |
 |---|---|---|
-| **[Visibly AI MCP](https://pypi.org/project/visiblyai-mcp-server/)** | SEO skills: keyword research, backlinks, site audit, GSC queries, on-page analysis | `pip install visiblyai-mcp-server` |
+| **[Visibly AI MCP](https://www.antonioblago.com/de/entwickler/mcp)** | SEO skills: keyword research, backlinks, site audit, GSC queries, on-page analysis | Hosted MCP — no install; add HTTP config to `settings.json` |
 | **[Notion MCP](https://mcp.notion.com/)** | Read/write Notion pages, databases, todos | Built-in |
 | **[Playwright MCP](https://github.com/anthropics/mcp-playwright)** | Browser automation, screenshots, web scraping | Built-in |
 
 ### Example: SEO Memory + Skills
 
 ```bash
-# Install both
-pip install skillmind[pinecone,mcp] visiblyai-mcp-server
+# SkillMind installs locally; Visibly AI is a hosted MCP (no install needed)
+pip install skillmind[pinecone,mcp]
 ```
 
 ```json
