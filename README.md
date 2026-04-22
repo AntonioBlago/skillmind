@@ -413,6 +413,14 @@ pip install skillmind[pinecone,mcp] visiblyai-mcp-server
 
 SkillMind remembers your SEO preferences, client keywords, and audit findings. Visibly AI provides the live SEO data. Together: persistent SEO intelligence.
 
+## Used by
+
+### [peec-ai-skills](https://github.com/AntonioBlago/peec-ai-skills)
+
+A Claude Code skill repository for **Peec AI** (brand-visibility tracking in LLM search) that uses SkillMind as its **cross-project memory layer**. The `skillmind-learner` skill writes causal, evidence-backed patterns to SkillMind after a Peec AI growth-loop outcome is measured, and recalls matching patterns as priors for the growth-agent orchestrator on the next run — so lessons learned on project A inform decisions on project B.
+
+See [`skills/skillmind-learner/SKILL.md`](https://github.com/AntonioBlago/peec-ai-skills/blob/main/skills/skillmind-learner/SKILL.md) for the full integration contract (read vs. write mode, required tags, pattern schema, handoff points from the other 5 Peec skills).
+
 ## Contributing
 
 PRs welcome! See [CONTRIBUTING.md](CONTRIBUTING.md).
