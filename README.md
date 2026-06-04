@@ -307,7 +307,7 @@ The extracted knowledge is auto-stored as memories and can be synced to your Obs
 API keys, emails, phone numbers, IBANs, and PII are **automatically redacted** before storing:
 
 ```
-Input:  "My Pinecone key is pcsk_2mrRyA_9BSbdn5i..."
+Input:  "My Pinecone key is pcsk_EXAMPLExxxxxxxxxxxxxxxx..."
 Stored: "My Pinecone key is [REDACTED:PINECONE_KEY]"
 ```
 
