@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "skillmind"
-version = "0.3.3"
+version = "0.4.0"
 description = "Active Skill Listener & Trainer — structured memory layer for AI coding assistants"
 readme = "README.md"
 license = "MIT"
@@ -15,6 +15,7 @@ authors = [
 keywords = [
     "mcp", "memory", "vector-database", "claude-code", "ai-assistant",
     "semantic-search", "pinecone", "chroma", "qdrant", "faiss", "supabase",
+    "falkordb", "graphrag", "knowledge-graph",
     "skill-learning", "youtube", "screen-recording",
 ]
 classifiers = [
@@ -44,6 +45,7 @@ pinecone = ["pinecone-client>=3.0"]
 supabase = ["supabase>=2.0", "vecs>=0.4"]
 qdrant = ["qdrant-client>=1.7"]
 faiss = ["faiss-cpu>=1.7"]
+falkordb = ["falkordb>=1.6"]
 mcp = ["fastmcp>=3.2.0"]
 youtube = ["youtube-transcript-api>=1.0.0", "yt-dlp>=2024.0.0", "requests>=2.31.0"]
 video = ["opencv-python>=4.8", "pillow>=10.0", "mss>=9.0", "pytesseract>=0.3.10"]
@@ -55,6 +57,7 @@ all = [
     "vecs>=0.4",
     "qdrant-client>=1.7",
     "faiss-cpu>=1.7",
+    "falkordb>=1.6",
     "fastmcp>=3.2.0",
     "youtube-transcript-api>=1.0.0",
     "yt-dlp>=2024.0.0",

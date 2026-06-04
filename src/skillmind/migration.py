@@ -10,11 +10,12 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 
-from .models import Memory, MemoryType, MemorySource
+from .models import Memory, MemoryType, MemorySource, QueryFilter
+from .store.base import MemoryStore
 from .trainer import Trainer
 
 
@@ -178,6 +179,67 @@ def migrate_memories(
             })
         else:
             stats["skipped_duplicate"] += 1
+
+    return stats
+
+
+def migrate_store(
+    source: MemoryStore,
+    target: MemoryStore,
+    *,
+    batch_size: int = 100,
+    include_expired: bool = True,
+    dry_run: bool = False,
+    max_memories: int = 10000,
+    progress_cb: Callable[[int, int], None] | None = None,
+) -> dict[str, Any]:
+    """Copy all memories from one store backend to another.
+
+    Memories keep their original IDs, so the migration is idempotent (re-running
+    upserts the same records). The target store re-embeds each memory with its own
+    engine, which means source and target MUST use the same embedding model /
+    dimension — pass a shared EmbeddingEngine when constructing both stores.
+
+    Note on pagination: some backends (Pinecone) cannot truly page through results,
+    so we fetch up to ``max_memories`` in a single ``list_all`` call rather than
+    iterating ``offset``. If the source holds more than ``max_memories``, the result
+    is flagged as ``truncated`` so the caller can warn instead of silently dropping.
+
+    Args:
+        source: store to read from (already initialized)
+        target: store to write to (already initialized)
+        batch_size: how many memories to write per ``add_batch`` call
+        include_expired: also migrate expired memories (default True — a migration
+            should not silently drop data)
+        dry_run: count and fetch, but do not write to the target
+        max_memories: hard cap on how many memories to fetch from the source
+        progress_cb: optional callback(done, total) for progress reporting
+
+    Returns:
+        Stats dict: source_count, fetched, migrated, batches, truncated.
+    """
+    qf = QueryFilter(include_expired=include_expired)
+    source_count = source.count(filter=qf)
+    memories = source.list_all(filter=qf, limit=max_memories, offset=0)
+
+    stats: dict[str, Any] = {
+        "source_count": source_count,
+        "fetched": len(memories),
+        "migrated": 0,
+        "batches": 0,
+        "truncated": source_count > len(memories),
+    }
+
+    if dry_run or not memories:
+        return stats
+
+    for i in range(0, len(memories), batch_size):
+        batch = memories[i : i + batch_size]
+        target.add_batch(batch)
+        stats["migrated"] += len(batch)
+        stats["batches"] += 1
+        if progress_cb:
+            progress_cb(stats["migrated"], len(memories))
 
     return stats
 

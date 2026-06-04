@@ -22,7 +22,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from ..models import Memory, MemorySource, MemoryType
 from ..trainer import Trainer
@@ -101,9 +101,10 @@ class YouTubeLearner:
         video_url: str,
         force_topic: str | None = None,
         tags: list[str] | None = None,
+        progress_cb: Callable[[int, int, str], None] | None = None,
     ) -> list[Memory]:
         """Non-blocking version of learn() for use in async MCP tools."""
-        return await asyncio.to_thread(self.learn, video_url, force_topic, tags)
+        return await asyncio.to_thread(self.learn, video_url, force_topic, tags, progress_cb)
 
     async def learn_channel_async(
         self,
@@ -121,6 +122,7 @@ class YouTubeLearner:
         video_url: str,
         force_topic: str | None = None,
         tags: list[str] | None = None,
+        progress_cb: Callable[[int, int, str], None] | None = None,
     ) -> list[Memory]:
         """
         Learn from a single YouTube video.
@@ -131,12 +133,26 @@ class YouTubeLearner:
         3. Fetch transcript
         4. Extract structured knowledge via Claude API
         5. Store as memories (skill + reference)
+
+        progress_cb: optional callback(step, total, message) invoked before each
+        phase. Used by async MCP tools to emit live MCP progress notifications.
+        The callback runs in the worker thread, so keep it cheap and non-blocking.
         """
+        total_steps = 4
+
+        def _emit(step: int, msg: str) -> None:
+            print(f"[SkillMind] {step}/{total_steps} {msg}", flush=True)
+            if progress_cb:
+                try:
+                    progress_cb(step, total_steps, msg)
+                except Exception:
+                    pass
+
         video_id = self._extract_video_id(video_url)
-        print(f"[SkillMind] 1/4 Fetching metadata for {video_id}...", flush=True)
+        _emit(1, f"Lade Metadaten für {video_id}…")
         metadata = self._get_metadata(video_id)
         title = metadata.get("title", video_id)
-        print(f"[SkillMind] 2/4 Fetching transcript: {title[:60]}...", flush=True)
+        _emit(2, f"Hole Transkript: {title[:60]}…")
         transcript = self._get_transcript(video_id)
 
         if not transcript:
@@ -153,11 +169,11 @@ class YouTubeLearner:
             return [mem] if mem else []
 
         # Extract knowledge
-        print(f"[SkillMind] 3/4 Extracting knowledge via Claude ({len(transcript)} chars)...", flush=True)
+        _emit(3, f"Extrahiere Wissen via Claude ({len(transcript)} Zeichen, kann 1–2 Min dauern)…")
         knowledge = self._extract_knowledge(transcript, metadata)
         memories: list[Memory] = []
 
-        print(f"[SkillMind] 4/4 Storing memories...", flush=True)
+        _emit(4, "Speichere Memories in Pinecone…")
         # Store main knowledge as a skill memory
         mem = self.trainer.learn(
             content=knowledge["summary"],

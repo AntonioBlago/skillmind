@@ -35,10 +35,14 @@ def create_store(config: SkillMindConfig, engine: EmbeddingEngine) -> MemoryStor
         from .faiss_store import FAISSStore
 
         return FAISSStore(config=config, engine=engine)
+    elif backend == "falkordb":
+        from .falkordb_store import FalkorDBStore
+
+        return FalkorDBStore(config=config, engine=engine)
     else:
         raise ValueError(
             f"Unknown backend: {backend}. "
-            f"Supported: chroma, pinecone, supabase, qdrant, faiss"
+            f"Supported: chroma, pinecone, supabase, qdrant, faiss, falkordb"
         )
 
 

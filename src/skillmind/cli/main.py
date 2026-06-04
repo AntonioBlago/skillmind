@@ -53,7 +53,7 @@ def cli(ctx: click.Context, config: str | None) -> None:
 
 
 @cli.command()
-@click.option("--backend", "-b", default="chroma", type=click.Choice(["chroma", "pinecone", "supabase", "qdrant", "faiss"]))
+@click.option("--backend", "-b", default="chroma", type=click.Choice(["chroma", "pinecone", "supabase", "qdrant", "faiss", "falkordb"]))
 @click.option("--data-dir", "-d", default=".skillmind")
 def init(backend: str, data_dir: str) -> None:
     """Initialize SkillMind in the current project."""
@@ -247,6 +247,82 @@ def import_memories(ctx: click.Context, source: str, dry_run: bool) -> None:
         for m in stats["memories"]:
             console.print(f"  [{m.get('type', '?')}] {m.get('name', '?')}: {m.get('content_preview', '')[:60]}")
         console.print("\n[dim]Run without --dry-run to actually import.[/dim]")
+
+
+_BACKENDS = ["chroma", "pinecone", "supabase", "qdrant", "faiss", "falkordb"]
+
+
+@cli.command("migrate")
+@click.option("--from", "from_backend", required=True, type=click.Choice(_BACKENDS), help="Source backend")
+@click.option("--to", "to_backend", required=True, type=click.Choice(_BACKENDS), help="Target backend")
+@click.option("--batch-size", default=100, help="Memories written per batch")
+@click.option("--dry-run", is_flag=True, help="Count source memories without writing")
+@click.option("--yes", "-y", is_flag=True, help="Skip the confirmation prompt")
+@click.pass_context
+def migrate(ctx: click.Context, from_backend: str, to_backend: str, batch_size: int, dry_run: bool, yes: bool) -> None:
+    """Copy all memories from one store backend to another (e.g. pinecone -> falkordb).
+
+    Both backends are read from the same config — the source uses the credentials
+    for --from, the target those for --to. Memories keep their IDs (idempotent) and
+    are re-embedded by the target with the shared embedding model.
+    """
+    from ..migration import migrate_store
+
+    if from_backend == to_backend:
+        console.print("[red]--from and --to must differ.[/red]")
+        sys.exit(1)
+
+    config = SkillMindConfig.load(ctx.obj.get("config_path")).resolve_env()
+    engine = EmbeddingEngine(config.embedding)
+
+    src_cfg = config.model_copy(deep=True)
+    src_cfg.store.backend = from_backend
+    source = create_store(src_cfg, engine)
+
+    tgt_cfg = config.model_copy(deep=True)
+    tgt_cfg.store.backend = to_backend
+    target = create_store(tgt_cfg, engine)
+
+    try:
+        source.initialize()
+        target.initialize()
+    except Exception as exc:  # noqa: BLE001 - surface connection/setup errors clearly
+        console.print(f"[red]Failed to initialize stores: {exc}[/red]")
+        sys.exit(1)
+
+    src_total = source.count(filter=QueryFilter(include_expired=True))
+    console.print(f"[bold]Migrating {from_backend} -> {to_backend}[/bold]")
+    console.print(f"  Source ({from_backend}) holds [cyan]{src_total}[/cyan] memories.")
+    console.print(f"  Embedding model: {config.embedding.model} (dim {config.embedding.dimension})")
+
+    if dry_run:
+        stats = migrate_store(source, target, batch_size=batch_size, dry_run=True)
+        console.print(f"[yellow]DRY RUN — would migrate {stats['fetched']} memories.[/yellow]")
+        if stats["truncated"]:
+            console.print(f"[red]Warning: source has more than the fetch cap; {stats['fetched']} of {stats['source_count']} would be copied.[/red]")
+        return
+
+    if src_total == 0:
+        console.print("[yellow]Nothing to migrate — source is empty.[/yellow]")
+        return
+
+    if not yes:
+        click.confirm(f"Write {src_total} memories into the {to_backend} store?", abort=True)
+
+    with console.status(f"Migrating to {to_backend}..."):
+        stats = migrate_store(
+            source,
+            target,
+            batch_size=batch_size,
+            progress_cb=lambda done, total: None,
+        )
+
+    console.print(f"  [green]Migrated: {stats['migrated']} memories in {stats['batches']} batches[/green]")
+    if stats["truncated"]:
+        console.print(f"  [red]Warning: only {stats['fetched']} of {stats['source_count']} were fetched (fetch cap). Re-run with a higher cap.[/red]")
+
+    tgt_total = target.count(filter=QueryFilter(include_expired=True))
+    console.print(f"  Target ({to_backend}) now holds [cyan]{tgt_total}[/cyan] memories.")
 
 
 @cli.command()
@@ -477,7 +553,7 @@ def sync_obsidian(ctx: click.Context, vault: str) -> None:
 
 
 @cli.command("setup")
-@click.option("--backend", "-b", default="chroma", type=click.Choice(["chroma", "pinecone", "supabase", "qdrant", "faiss"]))
+@click.option("--backend", "-b", default="chroma", type=click.Choice(["chroma", "pinecone", "supabase", "qdrant", "faiss", "falkordb"]))
 @click.option("--scan-dir", "-s", multiple=True, help="Additional directories to scan")
 @click.option("--dry-run", is_flag=True, help="Preview without importing")
 @click.pass_context

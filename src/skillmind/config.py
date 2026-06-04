@@ -21,7 +21,7 @@ class EmbeddingConfig(BaseModel):
 class StoreConfig(BaseModel):
     """Vector store backend configuration."""
 
-    backend: str = Field(default="chroma", description="chroma | pinecone | supabase | qdrant | faiss")
+    backend: str = Field(default="chroma", description="chroma | pinecone | supabase | qdrant | faiss | falkordb")
 
     # Chroma
     chroma_path: str = Field(default=".skillmind/chroma", description="ChromaDB persistence path")
@@ -43,6 +43,14 @@ class StoreConfig(BaseModel):
 
     # FAISS
     faiss_path: str = Field(default=".skillmind/faiss", description="FAISS index path")
+
+    # FalkorDB (Graph + Vector)
+    falkordb_url: str = Field(default="redis://localhost:6379", description="FalkorDB/Redis URL (redis://[:pw@]host:port)")
+    falkordb_password: str = Field(default="", description="FalkorDB password (used if not in URL)")
+    falkordb_graph: str = Field(default="skillmind", description="Graph name")
+    falkordb_graphrag: bool = Field(default=False, description="Enable GraphRAG multi-hop retrieval")
+    falkordb_seed_k: int = Field(default=5, description="GraphRAG: vector seeds before graph expansion")
+    falkordb_hops: int = Field(default=2, description="GraphRAG: max traversal hops (1-2)")
 
 
 class CustomPattern(BaseModel):
@@ -144,6 +152,8 @@ class SkillMindConfig(BaseModel):
             "SUPABASE_KEY": "store.supabase_key",
             "QDRANT_URL": "store.qdrant_url",
             "QDRANT_API_KEY": "store.qdrant_api_key",
+            "FALKORDB_URL": "store.falkordb_url",
+            "FALKORDB_PASSWORD": "store.falkordb_password",
         }
         for env_var, config_path in env_map.items():
             val = os.environ.get(env_var)

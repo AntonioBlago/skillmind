@@ -50,3 +50,7 @@ test_vault/
 # Website (private repo)
 website/
 generate_pdfs.py
+
+# Deploy secrets — public repo: commit the generic guide, never the instance values
+deploy/**/*.local.*
+deploy/**/.railway

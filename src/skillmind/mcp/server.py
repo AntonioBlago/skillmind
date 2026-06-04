@@ -17,6 +17,7 @@ Usage in Claude Code settings.json:
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from typing import Any
@@ -32,7 +33,7 @@ from ..trainer import Trainer
 
 def create_server():
     """Create and configure the MCP server."""
-    from fastmcp import FastMCP
+    from fastmcp import Context, FastMCP
 
     mcp = FastMCP("skillmind")
 
@@ -302,10 +303,14 @@ def create_server():
         video_url: str,
         topic: str = "",
         tags: str = "",
+        ctx: Context = None,
     ) -> str:
         """
         Learn knowledge from a YouTube video. Extracts transcript,
         structures key insights, and stores as memories.
+
+        Emits live MCP progress notifications (4 phases) plus a heartbeat
+        during the long Claude extraction step, so clients can show status.
 
         Args:
             video_url: YouTube video URL or video ID
@@ -317,20 +322,58 @@ def create_server():
         yt = YouTubeLearner(trainer=trainer)
         tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
 
-        # Fetch metadata + knowledge for markdown output
-        video_id = yt._extract_video_id(video_url)
-        metadata = yt._get_metadata(video_id)
-        memories = await yt.learn_async(video_url, force_topic=topic or None, tags=tag_list)
+        # Shared state: written by the worker thread via the callback,
+        # read by the heartbeat loop on the event loop thread.
+        state = {"step": 0, "total": 4, "msg": "Starte YouTube-Lernen…"}
 
-        # Build markdown from stored memory content
+        def _cb(step: int, total: int, msg: str) -> None:
+            state["step"], state["total"], state["msg"] = step, total, msg
+
+        if ctx is not None:
+            await ctx.report_progress(progress=0, total=4, message=state["msg"])
+
+        task = asyncio.create_task(
+            asyncio.to_thread(yt.learn, video_url, topic or None, tag_list, _cb)
+        )
+
+        # Heartbeat: re-emit progress every 2s (keepalive during the 1–2 min
+        # Claude call) and log a line whenever the phase advances.
+        last_step = -1
+        while not task.done():
+            if ctx is not None:
+                await ctx.report_progress(
+                    progress=state["step"], total=state["total"], message=state["msg"]
+                )
+                if state["step"] != last_step:
+                    await ctx.info(f"[{state['step']}/{state['total']}] {state['msg']}")
+                    last_step = state["step"]
+            await asyncio.sleep(2)
+
+        memories = await task  # re-raises any exception from the worker thread
+
+        if ctx is not None:
+            await ctx.report_progress(
+                progress=4, total=4, message="Fertig — in Pinecone gespeichert"
+            )
+
+        # Build markdown from stored memory content (no extra network call —
+        # metadata is reconstructed from the first stored memory).
+        first = memories[0] if memories else None
+        first_meta = (first.metadata or {}) if first else {}
+        md_metadata = {
+            "title": first.title if first else "",
+            "author": first_meta.get("author", ""),
+            "duration": first_meta.get("duration", 0),
+            "url": first_meta.get("video_url", ""),
+        }
         knowledge = {
-            "title": metadata.get("title", ""),
+            "title": first.title if first else "",
             "topic": topic or "youtube",
             "tags": tag_list or [],
-            "summary": memories[0].content if memories else "",
-            "key_takeaways": (memories[0].metadata or {}).get("key_takeaways", []) if memories else [],
+            "summary": first.content if first else "",
+            "key_takeaways": first_meta.get("key_takeaways", []),
         }
-        markdown = yt.format_markdown(metadata, knowledge)
+        markdown = yt.format_markdown(md_metadata, knowledge)
 
         return json.dumps({
             "status": "learned",
