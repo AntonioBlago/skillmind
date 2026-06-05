@@ -520,10 +520,19 @@ class YouTubeLearner:
         return "\n".join(lines)
 
     def _print_markdown(self, metadata: dict, knowledge: dict) -> None:
-        """Print markdown summary to stdout."""
-        print(f"\n{'=' * 60}", flush=True)
-        print(self.format_markdown(metadata, knowledge), flush=True)
-        print(f"{'=' * 60}\n", flush=True)
+        """Print markdown summary to stdout.
+
+        Encoding-safe: on consoles that can't represent every Unicode glyph
+        (e.g. Windows cp1252 and the '→' arrow), fall back to a lossy
+        encode so a cosmetic print never aborts an already-stored run.
+        """
+        text = f"\n{'=' * 60}\n{self.format_markdown(metadata, knowledge)}\n{'=' * 60}\n"
+        try:
+            print(text, flush=True)
+        except UnicodeEncodeError:
+            enc = getattr(sys.stdout, "encoding", None) or "utf-8"
+            sys.stdout.write(text.encode(enc, errors="replace").decode(enc))
+            sys.stdout.flush()
 
     # ── Transcript Extraction ─────────────────────────────────────
 
