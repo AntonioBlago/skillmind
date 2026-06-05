@@ -22,6 +22,16 @@ import json
 import sys
 from typing import Any
 
+# Import Context at module scope so that pydantic (via FastMCP 3.x) can resolve
+# the string forward-ref produced by `from __future__ import annotations` when it
+# inspects tool signatures like `ctx: Context = None`. Forward-refs are evaluated
+# against the function's module globals, not the enclosing function locals, so a
+# local `from fastmcp import Context` inside create_server() is not enough.
+try:
+    from fastmcp import Context
+except ImportError:  # fastmcp is an optional extra; create_server() re-checks
+    Context = Any  # type: ignore[assignment,misc]
+
 from ..config import SkillMindConfig
 from ..context import ContextGenerator
 from ..embeddings import EmbeddingEngine
