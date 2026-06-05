@@ -45,12 +45,20 @@ class YouTubeLearner:
         trainer: Trainer,
         language: str = "de",
         anthropic_api_key: str | None = None,
-        claude_model: str = "claude-sonnet-4-6",
+        claude_model: str | None = None,
     ):
         self.trainer = trainer
         self.language = language
         self.api_key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
-        self.claude_model = claude_model
+        # Batch extraction runs one call per chapter (+ synthesis), so default to
+        # the small/fast tier. Haiku 4.5 beats GPT-mini-class models on this
+        # structured-YAML, German extraction task while staying a drop-in on the
+        # Anthropic SDK. Override via env or constructor to step up to Sonnet.
+        self.claude_model = (
+            claude_model
+            or os.environ.get("SKILLMIND_YT_MODEL", "").strip()
+            or "claude-haiku-4-5-20251001"
+        )
 
         # Duration (seconds) derived from transcript timing — used as a fallback
         # when yt-dlp metadata is blocked and only oEmbed (no duration) is available.
