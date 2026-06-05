@@ -489,6 +489,37 @@ class FalkorDBStore(MemoryStore):
 
         return counts
 
+    def link_sequence(
+        self,
+        ordered_ids: list[str],
+        rel: str = "NEXT",
+        group_key: str | None = None,
+    ) -> int:
+        """Chain memories in a fixed order via directed ``:NEXT`` edges.
+
+        Used to preserve the original reading order of a sequence — e.g. the
+        chapters of a YouTube video — so a graph traversal can walk the content
+        forwards/backwards. Idempotent (MERGE). ``group_key`` (e.g. a video id)
+        is stamped on each edge so several sequences can share the graph without
+        their chains getting tangled. Returns the number of edges created.
+        """
+        ids = [i for i in ordered_ids if i]
+        if len(ids) < 2:
+            return 0
+        rel = re.sub(r"[^A-Za-z_]", "", rel) or "NEXT"
+        created = 0
+        for a, b in zip(ids, ids[1:]):
+            if a == b:
+                continue
+            self._run(
+                f"MATCH (a:Memory {{id:$a}}), (b:Memory {{id:$b}}) "
+                f"MERGE (a)-[e:{rel}]->(b) "
+                f"SET e.group_key=$g",
+                {"a": a, "b": b, "g": group_key or ""},
+            )
+            created += 1
+        return created
+
     def get(self, memory_id: str) -> Memory | None:
         res = self._run(
             f"MATCH (node:Memory {{id:$id}}) RETURN {_return_projection('node')}",

@@ -52,6 +52,15 @@ class YouTubeLearner:
         self.api_key = anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self.claude_model = claude_model
 
+        # Duration (seconds) derived from transcript timing — used as a fallback
+        # when yt-dlp metadata is blocked and only oEmbed (no duration) is available.
+        self._transcript_duration: int = 0
+
+        # Timed transcript segments [(start_seconds, text)], captured during
+        # transcript fetch. Used to split the transcript along chapter boundaries
+        # for batched, order-preserving knowledge extraction.
+        self._transcript_segments: list[tuple[float, str]] = []
+
         # Proxy config (ScraperAPI or generic)
         self._scraper_api_key = self._get_scraper_api_key()
         self._proxy_url = self._build_proxy_url()
@@ -155,6 +164,11 @@ class YouTubeLearner:
         _emit(2, f"Hole Transkript: {title[:60]}…")
         transcript = self._get_transcript(video_id)
 
+        # If yt-dlp metadata was blocked (duration 0) but the transcript carried
+        # timing info, recover the duration from the last transcript timestamp.
+        if not metadata.get("duration") and self._transcript_duration:
+            metadata["duration"] = self._transcript_duration
+
         if not transcript:
             print(f"[SkillMind] No transcript available, storing reference only", flush=True)
             # Store just the reference
@@ -168,39 +182,87 @@ class YouTubeLearner:
             )
             return [mem] if mem else []
 
-        # Extract knowledge
-        _emit(3, f"Extrahiere Wissen via Claude ({len(transcript)} Zeichen, kann 1–2 Min dauern)…")
-        knowledge = self._extract_knowledge(transcript, metadata)
+        # Extract knowledge (batched; per-chapter when the video has chapters)
+        chapters = metadata.get("chapters") or []
+        _emit(3, f"Extrahiere Wissen via Claude ({len(transcript)} Zeichen, "
+                 f"{len(chapters)} Kapitel, kann 1–2 Min dauern)…")
+        knowledge, chapter_knows = self._extract_with_chapters(transcript, metadata)
+        # Keep the chapters on the knowledge dict for the markdown render.
+        knowledge["chapters"] = chapter_knows
         memories: list[Memory] = []
 
-        _emit(4, "Speichere Memories in Pinecone…")
+        _emit(4, f"Speichere Memories (FalkorDB)… {len(chapter_knows)} Kapitel")
         # Store main knowledge as a skill memory
+        subtopics = knowledge.get("subtopics", [])
+        base_title = knowledge.get("title", metadata.get("title", "YouTube Video"))
         mem = self.trainer.learn(
             content=knowledge["summary"],
-            title=knowledge.get("title", metadata.get("title", "YouTube Video"))[:80],
+            title=base_title[:80],
             source=MemorySource.SKILL_SEEKERS,
             force_type=MemoryType.SKILL,
-            force_topic=force_topic or knowledge.get("topic", "youtube"),
-            tags=(tags or []) + knowledge.get("tags", []) + ["youtube"],
+            force_topic=force_topic or knowledge.get("topic") or None,
+            tags=(tags or []) + knowledge.get("tags", []) + subtopics + ["youtube"],
             metadata={
                 "video_id": video_id,
                 "video_url": metadata.get("url", ""),
                 "duration": metadata.get("duration", 0),
                 "author": metadata.get("author", ""),
+                "subtopics": subtopics,
                 "key_takeaways": knowledge.get("key_takeaways", []),
+                "chapter_count": len(chapter_knows),
             },
         )
         if mem:
             memories.append(mem)
 
-        # Store individual key takeaways as separate memories
+        # Store one memory per chapter, preserving order via a :NEXT graph chain.
+        chapter_mem_ids: list[str] = []
+        for ck in chapter_knows:
+            c_idx = int(ck.get("chapter_index", 0))
+            c_title = ck.get("chapter_title") or f"Kapitel {c_idx + 1}"
+            c_summary = (ck.get("summary") or "").strip()
+            if not c_summary:
+                continue
+            cmem = self.trainer.learn(
+                content=c_summary,
+                title=f"{base_title} - Kap. {c_idx + 1}: {c_title}"[:80],
+                source=MemorySource.SKILL_SEEKERS,
+                force_type=MemoryType.SKILL,
+                force_topic=force_topic or ck.get("topic") or knowledge.get("topic") or None,
+                tags=(tags or []) + (ck.get("tags") or []) + ["youtube", "chapter"],
+                metadata={
+                    "video_id": video_id,
+                    "video_url": metadata.get("url", ""),
+                    "chapter_index": c_idx,
+                    "chapter_start": ck.get("chapter_start", 0),
+                    "chapter_title": c_title,
+                    "source_video": video_id,
+                    "key_takeaways": ck.get("key_takeaways", []),
+                },
+            )
+            if cmem:
+                memories.append(cmem)
+                chapter_mem_ids.append(cmem.id)
+
+        # Chain chapter memories in order (FalkorDB :NEXT edges) if supported.
+        if len(chapter_mem_ids) >= 2:
+            store = getattr(self.trainer, "store", None)
+            if store is not None and hasattr(store, "link_sequence"):
+                try:
+                    n = store.link_sequence(chapter_mem_ids, rel="NEXT", group_key=video_id)
+                    print(f"[SkillMind] Kapitel-Reihenfolge verkettet: {n} :NEXT-Kanten", flush=True)
+                except Exception as e:
+                    print(f"[SkillMind] :NEXT chaining übersprungen: {e}", flush=True)
+
+        # Store the overall key takeaways as separate memories (no chapters case
+        # keeps the original behaviour; with chapters they complement the chain).
         for takeaway in knowledge.get("key_takeaways", [])[:5]:
             mem = self.trainer.learn(
                 content=takeaway,
                 title=f"Takeaway: {takeaway[:60]}",
                 source=MemorySource.SKILL_SEEKERS,
                 force_type=MemoryType.SKILL,
-                force_topic=force_topic or knowledge.get("topic", "youtube"),
+                force_topic=force_topic or knowledge.get("topic") or None,
                 tags=["youtube", "takeaway"],
                 metadata={"source_video": video_id},
             )
@@ -222,7 +284,7 @@ class YouTubeLearner:
             title=f"Video: {metadata.get('title', video_id)[:60]}",
             source=MemorySource.SKILL_SEEKERS,
             force_type=MemoryType.REFERENCE,
-            force_topic=force_topic or "youtube",
+            force_topic=force_topic or knowledge.get("topic") or None,
             tags=["youtube", "video_reference"],
         )
         if mem:
@@ -281,6 +343,32 @@ class YouTubeLearner:
 
         return all_memories
 
+    def _extract_with_chapters(
+        self, transcript: str, metadata: dict
+    ) -> tuple[dict, list[dict]]:
+        """Return (overall_knowledge, ordered_chapter_knowledge).
+
+        When the video has chapters AND timed transcript segments are available,
+        each chapter is summarized separately (order preserved) and the overall
+        view is synthesized from the chapter summaries. Otherwise falls back to
+        whole-transcript batched extraction with no per-chapter knowledge.
+        """
+        chapters = metadata.get("chapters") or []
+        sections = (
+            self._split_transcript_by_chapters(chapters, self._transcript_segments)
+            if chapters else []
+        )
+        if not self.api_key or len(sections) < 2:
+            # No usable chapters → single overall knowledge, no chapter memories.
+            return self._extract_knowledge(transcript, metadata), []
+
+        import anthropic
+
+        client = anthropic.Anthropic(api_key=self.api_key)
+        chapter_knows = self._extract_chapters(client, sections, metadata)
+        overall = self._synthesize_overall(client, chapter_knows, metadata)
+        return overall, chapter_knows
+
     # ── Markdown Output ───────────────────────────────────────────
 
     @staticmethod
@@ -291,6 +379,7 @@ class YouTubeLearner:
         duration = metadata.get("duration", 0) // 60
         url = metadata.get("url", "")
         topic = knowledge.get("topic", "")
+        subtopics = knowledge.get("subtopics", [])
         tags = knowledge.get("tags", [])
         summary = knowledge.get("summary", "")
         takeaways = knowledge.get("key_takeaways", [])
@@ -301,6 +390,8 @@ class YouTubeLearner:
         ]
         if url:
             lines.append(f"**URL:** {url}")
+        if subtopics:
+            lines.append(f"**Subtopics:** {', '.join(str(s) for s in subtopics)}")
         if tags:
             lines.append(f"**Tags:** {', '.join(str(t) for t in tags)}")
         lines.append("")
@@ -309,6 +400,16 @@ class YouTubeLearner:
             lines.append("## Key Takeaways")
             for i, t in enumerate(takeaways, 1):
                 lines.append(f"{i}. {t}")
+            lines.append("")
+
+        chapters = knowledge.get("chapters") or []
+        if chapters:
+            lines.append(f"## Kapitel ({len(chapters)}) - in Reihenfolge")
+            for ck in chapters:
+                idx = int(ck.get("chapter_index", 0)) + 1
+                start = float(ck.get("chapter_start", 0) or 0)
+                ts = f"{int(start // 60):02d}:{int(start % 60):02d}"
+                lines.append(f"{idx}. [{ts}] {ck.get('chapter_title', '')}")
             lines.append("")
 
         if summary:
@@ -331,6 +432,9 @@ class YouTubeLearner:
 
         Each method has explicit timeouts to prevent indefinite hangs.
         """
+        # Reset timed segments so repeated calls don't accumulate stale timing.
+        self._transcript_segments = []
+
         # Method 1: youtube-transcript-api with timeout wrapper
         try:
             transcript = self._get_transcript_api(video_id)
@@ -380,6 +484,20 @@ class YouTubeLearner:
                     first = next(iter(transcript_list))
                     entries = first.fetch()
                 result_container.append(" ".join(entry.text for entry in entries))
+                try:
+                    segs: list[tuple[float, str]] = []
+                    for entry in entries:
+                        txt = (getattr(entry, "text", "") or "").strip()
+                        if txt:
+                            segs.append((float(getattr(entry, "start", 0) or 0), txt))
+                    self._transcript_segments = segs
+                except Exception:
+                    pass
+                try:
+                    last = entries[-1]
+                    self._transcript_duration = int(getattr(last, "start", 0) + getattr(last, "duration", 0))
+                except Exception:
+                    pass
             except Exception as exc:
                 error_container.append(exc)
 
@@ -422,11 +540,24 @@ class YouTubeLearner:
                     with open(sub_path, "r", encoding="utf-8") as f:
                         data = json.load(f)
                     texts = []
+                    segments: list[tuple[float, str]] = []
+                    last_ms = 0
                     for event in data.get("events", []):
+                        ev_start_ms = event.get("tStartMs", 0)
+                        ev_end = ev_start_ms + event.get("dDurationMs", 0)
+                        if ev_end > last_ms:
+                            last_ms = ev_end
+                        ev_parts = []
                         for seg in event.get("segs", []):
                             text = seg.get("utf8", "").strip()
                             if text and text != "\n":
                                 texts.append(text)
+                                ev_parts.append(text)
+                        if ev_parts:
+                            segments.append((ev_start_ms / 1000.0, " ".join(ev_parts)))
+                    if last_ms:
+                        self._transcript_duration = int(last_ms / 1000)
+                    self._transcript_segments = segments
                     return " ".join(texts)
 
         return ""
@@ -463,6 +594,7 @@ class YouTubeLearner:
                     "description": data.get("description", "")[:500],
                     "duration": data.get("duration", 0) or 0,
                     "tags": data.get("tags", [])[:10],
+                    "chapters": self._normalize_chapters(data.get("chapters")),
                     "video_id": video_id,
                     "url": f"https://www.youtube.com/watch?v={video_id}",
                 }
@@ -479,27 +611,38 @@ class YouTubeLearner:
                 "description": "",
                 "duration": 0,
                 "tags": [],
+                "chapters": [],
                 "video_id": video_id,
                 "url": f"https://www.youtube.com/watch?v={video_id}",
             }
         except Exception:
             return {
                 "title": "", "author": "", "description": "",
-                "duration": 0, "tags": [], "video_id": video_id,
+                "duration": 0, "tags": [], "chapters": [], "video_id": video_id,
                 "url": f"https://www.youtube.com/watch?v={video_id}",
             }
 
     # ── Knowledge Extraction ──────────────────────────────────────
 
     def _extract_knowledge(self, transcript: str, metadata: dict) -> dict:
-        """Extract structured knowledge from transcript using Claude API."""
+        """Extract structured knowledge from a (whole) transcript via Claude.
+
+        Batches the full transcript instead of truncating: the text is split
+        into char-bounded windows, each window is summarized, then a final
+        synthesis call merges the window summaries into one knowledge object.
+        For a normal-length video this is a single window (one extract call)
+        plus one synthesis call.
+        """
         if not self.api_key:
-            # No API key — return raw transcript as knowledge
+            # No API key — return raw transcript as knowledge. topic stays empty
+            # so the trainer auto-detects it from the content instead of forcing
+            # the platform name ("youtube") as the subject.
             return {
                 "title": metadata.get("title", "YouTube Video"),
                 "summary": transcript[:2000],
                 "key_takeaways": [],
-                "topic": "youtube",
+                "topic": "",
+                "subtopics": [],
                 "tags": metadata.get("tags", []),
             }
 
@@ -507,12 +650,30 @@ class YouTubeLearner:
 
         client = anthropic.Anthropic(api_key=self.api_key)
 
-        # Chunk if very long
-        max_chars = 80000
-        content = transcript[:max_chars]
+        windows = self._window_text(transcript, max_chars=28000)
+        if len(windows) == 1:
+            return self._llm_extract(client, windows[0], metadata)
 
+        # Long transcript: extract each window, then synthesize one overall view.
+        partials = []
+        for i, win in enumerate(windows, 1):
+            print(f"[SkillMind] Batch {i}/{len(windows)} ({len(win)} Zeichen)…", flush=True)
+            partials.append(self._llm_extract(client, win, metadata))
+        return self._synthesize_overall(client, partials, metadata)
+
+    # ── LLM helpers (shared by whole-transcript and per-chapter paths) ──
+
+    def _llm_extract(self, client: Any, content: str, metadata: dict,
+                     section_title: str | None = None) -> dict:
+        """One Claude call → one knowledge dict for the given text block."""
+        scope = (
+            f"Dieser Abschnitt ist das Kapitel \"{section_title}\" des Videos."
+            if section_title else
+            "Dies ist (ein Teil des) Video-Transkripts."
+        )
         prompt = f"""Extrahiere das Kernwissen aus diesem YouTube-Video-Transkript.
 Fokussiere dich auf wiederverwendbare Erkenntnisse, Workflows, Tipps und Fakten.
+{scope}
 
 ## Video-Infos
 - Titel: {metadata.get('title', 'Unbekannt')}
@@ -527,8 +688,9 @@ Extrahiere das Wissen in folgendem YAML-Format (zwischen --- Markern):
 
 ---
 title: "Praegnanter Wissenstitel"
-topic: "hauptthema"
-tags: [tag1, tag2, tag3]
+topic: "inhaltliches Hauptthema (z.B. 'large-language-models', NICHT die Quelle 'youtube')"
+subtopics: [unterthema1, unterthema2, unterthema3]
+tags: [tag1, tag2, tag3, tag4, tag5]
 summary: |
   Ausfuehrliche Zusammenfassung des Kernwissens (500-1000 Woerter).
   Strukturiert mit Abschnitten. Fokus auf wiederverwendbare Erkenntnisse.
@@ -540,23 +702,192 @@ key_takeaways:
   - "Fuenfte wichtige Erkenntnis"
 ---
 
+Wichtig: 'topic' ist das inhaltliche Thema des Videos, nicht die Plattform.
+'subtopics' sind 3-6 feinere Unterthemen. 'tags' sind kurze Schlagworte (kebab-case).
 Antworte NUR mit dem YAML-Block."""
 
         response = client.messages.create(
             model=self.claude_model,
-            max_tokens=4096,
+            max_tokens=8192,
             messages=[{"role": "user", "content": prompt}],
             timeout=120.0,
         )
-
         return self._parse_knowledge_yaml(response.content[0].text, metadata)
 
+    def _synthesize_overall(self, client: Any, partials: list[dict], metadata: dict) -> dict:
+        """Merge per-window/chapter knowledge dicts into one overall knowledge."""
+        if not partials:
+            return self._parse_knowledge_yaml("", metadata)
+        if len(partials) == 1:
+            return partials[0]
+
+        blocks = []
+        for i, p in enumerate(partials, 1):
+            tks = "\n".join(f"  - {t}" for t in (p.get("key_takeaways") or []))
+            blocks.append(
+                f"### Teil {i}: {p.get('title','')}\n"
+                f"{(p.get('summary') or '')[:1500]}\n"
+                f"Takeaways:\n{tks}"
+            )
+        joined = "\n\n".join(blocks)
+        prompt = f"""Fasse die folgenden Teil-Zusammenfassungen eines YouTube-Videos
+zu EINER kohaerenten Gesamt-Wissensbasis zusammen.
+
+## Video-Infos
+- Titel: {metadata.get('title', 'Unbekannt')}
+- Autor: {metadata.get('author', 'Unbekannt')}
+
+## Teil-Zusammenfassungen
+{joined}
+
+## Aufgabe
+Erzeuge eine konsolidierte Gesamtsicht im YAML-Format (zwischen --- Markern):
+
+---
+title: "Praegnanter Gesamttitel"
+topic: "inhaltliches Hauptthema (NICHT 'youtube')"
+subtopics: [unterthema1, unterthema2, unterthema3]
+tags: [tag1, tag2, tag3, tag4, tag5]
+summary: |
+  Konsolidierte Gesamtzusammenfassung (600-1000 Woerter).
+key_takeaways:
+  - "Wichtigste Gesamt-Erkenntnis 1"
+  - "Wichtigste Gesamt-Erkenntnis 2"
+  - "Wichtigste Gesamt-Erkenntnis 3"
+  - "Wichtigste Gesamt-Erkenntnis 4"
+  - "Wichtigste Gesamt-Erkenntnis 5"
+---
+
+Antworte NUR mit dem YAML-Block."""
+        response = client.messages.create(
+            model=self.claude_model,
+            max_tokens=8192,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=120.0,
+        )
+        return self._parse_knowledge_yaml(response.content[0].text, metadata)
+
+    # ── Chapters & batching ───────────────────────────────────────
+
+    @staticmethod
+    def _normalize_chapters(raw: Any) -> list[dict]:
+        """Normalize yt-dlp chapters to [{title, start, end}] with floats."""
+        if not raw or not isinstance(raw, list):
+            return []
+        out: list[dict] = []
+        for i, ch in enumerate(raw):
+            if not isinstance(ch, dict):
+                continue
+            try:
+                start = float(ch.get("start_time", 0) or 0)
+            except (TypeError, ValueError):
+                start = 0.0
+            end_raw = ch.get("end_time")
+            try:
+                end = float(end_raw) if end_raw is not None else None
+            except (TypeError, ValueError):
+                end = None
+            title = str(ch.get("title") or f"Kapitel {i + 1}").strip()
+            out.append({"title": title, "start": start, "end": end})
+        out.sort(key=lambda c: c["start"])
+        return out
+
+    def _split_transcript_by_chapters(
+        self, chapters: list[dict], segments: list[tuple[float, str]]
+    ) -> list[dict]:
+        """Assign timed transcript segments to chapters by start time.
+
+        Returns [{index, title, start, end, text}] for chapters that received
+        text. Needs timed segments; without them chapter splitting is impossible.
+        """
+        if not chapters or not segments:
+            return []
+        segs = sorted(segments, key=lambda s: s[0])
+        result: list[dict] = []
+        for idx, ch in enumerate(chapters):
+            start = ch["start"]
+            # End = explicit end, else next chapter start, else +inf.
+            end = ch.get("end")
+            if end is None:
+                end = chapters[idx + 1]["start"] if idx + 1 < len(chapters) else float("inf")
+            parts = [t for (s, t) in segs if start <= s < end]
+            text = " ".join(parts).strip()
+            if text:
+                result.append({
+                    "index": idx,
+                    "title": ch["title"],
+                    "start": start,
+                    "end": None if end == float("inf") else end,
+                    "text": text,
+                })
+        return result
+
+    @staticmethod
+    def _window_text(text: str, max_chars: int = 28000) -> list[str]:
+        """Split text into <=max_chars windows, breaking on whitespace."""
+        text = text or ""
+        if len(text) <= max_chars:
+            return [text] if text else [""]
+        windows: list[str] = []
+        i = 0
+        n = len(text)
+        while i < n:
+            end = min(i + max_chars, n)
+            if end < n:
+                brk = text.rfind(" ", i + int(max_chars * 0.6), end)
+                if brk != -1:
+                    end = brk
+            windows.append(text[i:end].strip())
+            i = end
+        return [w for w in windows if w]
+
+    def _extract_chapters(
+        self, client: Any, chapter_sections: list[dict], metadata: dict
+    ) -> list[dict]:
+        """Extract knowledge per chapter (one Claude call each), order preserved.
+
+        Long chapters are internally windowed+synthesized. Each returned dict is
+        the chapter knowledge plus its index/title/start for memory metadata.
+        """
+        out: list[dict] = []
+        total = len(chapter_sections)
+        for sec in chapter_sections:
+            print(f"[SkillMind] Kapitel {sec['index'] + 1}/{total}: {sec['title'][:50]}…", flush=True)
+            windows = self._window_text(sec["text"], max_chars=28000)
+            if len(windows) == 1:
+                know = self._llm_extract(client, windows[0], metadata, section_title=sec["title"])
+            else:
+                partials = [
+                    self._llm_extract(client, w, metadata, section_title=sec["title"])
+                    for w in windows
+                ]
+                know = self._synthesize_overall(client, partials, metadata)
+            know["chapter_index"] = sec["index"]
+            know["chapter_title"] = sec["title"]
+            know["chapter_start"] = sec["start"]
+            out.append(know)
+        return out
+
     def _parse_knowledge_yaml(self, text: str, metadata: dict) -> dict:
-        """Parse YAML knowledge extraction response."""
+        """Parse YAML knowledge extraction response.
+
+        Robust against markdown code fences and a missing closing ``---`` marker
+        (which happens when a long response is truncated by max_tokens) — in that
+        case we parse everything after the opening ``---``.
+        """
         import yaml
 
         text = text.strip()
+        # Strip markdown code fences if the model wrapped the block.
+        if text.startswith("```"):
+            text = re.sub(r"^```[a-zA-Z]*\s*\n", "", text)
+            text = re.sub(r"\n```\s*$", "", text).strip()
+
+        # Prefer a fully delimited block; fall back to "from first --- onwards"
+        # so a truncated (unterminated) YAML block is still usable.
         fm_match = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
+        if not fm_match:
+            fm_match = re.match(r'^---\s*\n(.*)', text, re.DOTALL)
         if fm_match:
             try:
                 data = yaml.safe_load(fm_match.group(1))
@@ -564,18 +895,20 @@ Antworte NUR mit dem YAML-Block."""
                     "title": data.get("title", metadata.get("title", "")),
                     "summary": data.get("summary", ""),
                     "key_takeaways": data.get("key_takeaways", []),
-                    "topic": data.get("topic", "youtube"),
-                    "tags": data.get("tags", []),
+                    "topic": data.get("topic", "") or "",
+                    "subtopics": data.get("subtopics", []) or [],
+                    "tags": data.get("tags", []) or [],
                 }
             except yaml.YAMLError:
                 pass
 
-        # Fallback
+        # Fallback — leave topic empty so the trainer auto-detects from content.
         return {
             "title": metadata.get("title", "YouTube Video"),
             "summary": text[:2000],
             "key_takeaways": [],
-            "topic": "youtube",
+            "topic": "",
+            "subtopics": [],
             "tags": metadata.get("tags", []),
         }
 

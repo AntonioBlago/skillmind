@@ -154,13 +154,21 @@ class SkillMindConfig(BaseModel):
             "QDRANT_API_KEY": "store.qdrant_api_key",
             "FALKORDB_URL": "store.falkordb_url",
             "FALKORDB_PASSWORD": "store.falkordb_password",
+            "FALKORDB_GRAPH": "store.falkordb_graph",
+            "FALKORDB_GRAPHRAG": "store.falkordb_graphrag",
         }
+        # Env vars whose target config field is a bool — coerce the string.
+        bool_keys = {"FALKORDB_GRAPHRAG"}
         for env_var, config_path in env_map.items():
             val = os.environ.get(env_var)
             if val:
+                if env_var in bool_keys:
+                    coerced: Any = val.strip().lower() in ("1", "true", "yes", "on")
+                else:
+                    coerced = val
                 parts = config_path.split(".")
                 obj: Any = self
                 for part in parts[:-1]:
                     obj = getattr(obj, part)
-                setattr(obj, parts[-1], val)
+                setattr(obj, parts[-1], coerced)
         return self
