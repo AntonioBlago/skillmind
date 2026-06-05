@@ -391,13 +391,18 @@ code_snippets:
 
 Antworte NUR mit dem YAML-Block."""
 
-        response = client.messages.create(
+        # Stream the response (Bikefitting pattern) so long analyses keep the
+        # connection alive token-by-token instead of risking a read timeout.
+        parts: list[str] = []
+        with client.messages.stream(
             model=self.claude_model,
             max_tokens=4096,
             messages=[{"role": "user", "content": prompt}],
-        )
+        ) as stream:
+            for chunk in stream.text_stream:
+                parts.append(chunk)
 
-        text = response.content[0].text.strip()
+        text = "".join(parts).strip()
         fm_match = re.match(r'^---\s*\n(.*?)\n---', text, re.DOTALL)
         if fm_match:
             try:

@@ -21,7 +21,10 @@ import os
 import re
 import subprocess
 import sys
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable
 
 from ..models import Memory, MemorySource, MemoryType
@@ -60,6 +63,22 @@ class YouTubeLearner:
             or "claude-haiku-4-5-20251001"
         )
 
+        # ── Batching / streaming / concurrency knobs ──────────────────
+        # Context-window budget: keep each Claude call's INPUT well under 100k
+        # tokens. German averages ~3.5 chars/token, so ~90k tokens of transcript
+        # ≈ 300k chars. Fewer, larger windows = fewer Claude calls ("batchen").
+        self.max_window_chars = self._env_int("SKILLMIND_YT_MAX_WINDOW_CHARS", 300_000)
+        # Output cap: chapter/summary YAML is short — 8192 was oversized and slow.
+        self.max_output_tokens = self._env_int("SKILLMIND_YT_MAX_TOKENS", 4096)
+        # Parallel chapter extraction. The Anthropic client is thread-safe; the
+        # real limit is account rate limits, so keep this modest by default.
+        self.concurrency = max(1, self._env_int("SKILLMIND_YT_CONCURRENCY", 6))
+        # Where per-video extraction progress is checkpointed for resume.
+        data_dir = getattr(getattr(self.trainer, "config", None), "data_dir", ".skillmind")
+        self._checkpoint_dir = Path(data_dir) / "yt_progress"
+        # Serialises checkpoint-file writes across extraction worker threads.
+        self._ckpt_lock = threading.Lock()
+
         # Duration (seconds) derived from transcript timing — used as a fallback
         # when yt-dlp metadata is blocked and only oEmbed (no duration) is available.
         self._transcript_duration: int = 0
@@ -86,6 +105,74 @@ class YouTubeLearner:
         if self._scraper_api_key:
             return f"http://scraperapi:{self._scraper_api_key}@proxy-server.scraperapi.com:8001"
         return os.environ.get("HTTPS_PROXY") or os.environ.get("HTTP_PROXY") or None
+
+    @staticmethod
+    def _env_int(name: str, default: int) -> int:
+        """Read an int from the environment, falling back on empty/invalid."""
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            return default
+        try:
+            return int(raw)
+        except ValueError:
+            return default
+
+    # ── Anthropic streaming + checkpoint helpers ──────────────────────
+
+    def _stream_text(self, client: Any, prompt: str, max_tokens: int | None = None) -> str:
+        """One Claude call via the streaming API → full response text.
+
+        Mirrors the Bikefitting pattern (messages.stream + text_stream): streaming
+        keeps the HTTP connection alive token-by-token, so long extractions never
+        hit the read timeout that a blocking messages.create() would.
+        """
+        full: list[str] = []
+        with client.messages.stream(
+            model=self.claude_model,
+            max_tokens=max_tokens or self.max_output_tokens,
+            messages=[{"role": "user", "content": prompt}],
+        ) as stream:
+            for text in stream.text_stream:
+                full.append(text)
+        return "".join(full)
+
+    def _checkpoint_path(self, video_id: str) -> Path:
+        return self._checkpoint_dir / f"{video_id}.json"
+
+    def _load_checkpoint(self, video_id: str) -> dict[int, dict]:
+        """Load already-extracted chapter knowledge keyed by chapter index."""
+        path = self._checkpoint_path(video_id)
+        if not path.exists():
+            return {}
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            chapters = raw.get("chapters", {}) if isinstance(raw, dict) else {}
+            return {int(k): v for k, v in chapters.items()}
+        except Exception as e:
+            print(f"[SkillMind] Checkpoint unlesbar ({e}), starte neu", flush=True)
+            return {}
+
+    def _save_checkpoint_chapter(self, video_id: str, index: int, know: dict) -> None:
+        """Persist one chapter's extracted knowledge atomically (resume point)."""
+        with self._ckpt_lock:
+            done = self._load_checkpoint(video_id)
+            done[index] = know
+            payload = {
+                "video_id": video_id,
+                "chapters": {str(k): v for k, v in done.items()},
+            }
+            self._checkpoint_dir.mkdir(parents=True, exist_ok=True)
+            path = self._checkpoint_path(video_id)
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+            tmp.replace(path)
+
+    def _clear_checkpoint(self, video_id: str) -> None:
+        """Remove the checkpoint once the video is fully stored."""
+        try:
+            self._checkpoint_path(video_id).unlink(missing_ok=True)
+        except Exception:
+            pass
 
     def _scraper_fetch(self, url: str, timeout: int = 30) -> str:
         """Fetch a URL via ScraperAPI direct URL mode (avoids SSL issues)."""
@@ -168,6 +255,8 @@ class YouTubeLearner:
         video_id = self._extract_video_id(video_url)
         _emit(1, f"Lade Metadaten für {video_id}…")
         metadata = self._get_metadata(video_id)
+        # Make the id available to the extraction layer for checkpoint/resume.
+        metadata["video_id"] = video_id
         title = metadata.get("title", video_id)
         _emit(2, f"Hole Transkript: {title[:60]}…")
         transcript = self._get_transcript(video_id)
@@ -297,6 +386,9 @@ class YouTubeLearner:
         )
         if mem:
             memories.append(mem)
+
+        # Everything is stored — drop the resume checkpoint for this video.
+        self._clear_checkpoint(video_id)
 
         return memories
 
@@ -658,15 +750,24 @@ class YouTubeLearner:
 
         client = anthropic.Anthropic(api_key=self.api_key)
 
-        windows = self._window_text(transcript, max_chars=28000)
+        windows = self._window_text(transcript, max_chars=self.max_window_chars)
         if len(windows) == 1:
             return self._llm_extract(client, windows[0], metadata)
 
-        # Long transcript: extract each window, then synthesize one overall view.
-        partials = []
-        for i, win in enumerate(windows, 1):
-            print(f"[SkillMind] Batch {i}/{len(windows)} ({len(win)} Zeichen)…", flush=True)
-            partials.append(self._llm_extract(client, win, metadata))
+        # Long transcript: extract each window in parallel, then synthesize.
+        print(f"[SkillMind] {len(windows)} Batches (je ≤{self.max_window_chars} Zeichen), "
+              f"parallel ×{self.concurrency}…", flush=True)
+        partials_idx: dict[int, dict] = {}
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
+            futs = {
+                pool.submit(self._llm_extract, client, win, metadata): i
+                for i, win in enumerate(windows)
+            }
+            for fut in as_completed(futs):
+                i = futs[fut]
+                partials_idx[i] = fut.result()
+                print(f"[SkillMind] Batch {i + 1}/{len(windows)} fertig", flush=True)
+        partials = [partials_idx[i] for i in sorted(partials_idx)]
         return self._synthesize_overall(client, partials, metadata)
 
     # ── LLM helpers (shared by whole-transcript and per-chapter paths) ──
@@ -714,13 +815,8 @@ Wichtig: 'topic' ist das inhaltliche Thema des Videos, nicht die Plattform.
 'subtopics' sind 3-6 feinere Unterthemen. 'tags' sind kurze Schlagworte (kebab-case).
 Antworte NUR mit dem YAML-Block."""
 
-        response = client.messages.create(
-            model=self.claude_model,
-            max_tokens=8192,
-            messages=[{"role": "user", "content": prompt}],
-            timeout=120.0,
-        )
-        return self._parse_knowledge_yaml(response.content[0].text, metadata)
+        text = self._stream_text(client, prompt)
+        return self._parse_knowledge_yaml(text, metadata)
 
     def _synthesize_overall(self, client: Any, partials: list[dict], metadata: dict) -> dict:
         """Merge per-window/chapter knowledge dicts into one overall knowledge."""
@@ -767,13 +863,8 @@ key_takeaways:
 ---
 
 Antworte NUR mit dem YAML-Block."""
-        response = client.messages.create(
-            model=self.claude_model,
-            max_tokens=8192,
-            messages=[{"role": "user", "content": prompt}],
-            timeout=120.0,
-        )
-        return self._parse_knowledge_yaml(response.content[0].text, metadata)
+        text = self._stream_text(client, prompt)
+        return self._parse_knowledge_yaml(text, metadata)
 
     # ── Chapters & batching ───────────────────────────────────────
 
@@ -849,32 +940,66 @@ Antworte NUR mit dem YAML-Block."""
             i = end
         return [w for w in windows if w]
 
+    def _extract_one_chapter(self, client: Any, sec: dict, metadata: dict) -> dict:
+        """Extract knowledge for a single chapter section (1+ streamed calls)."""
+        windows = self._window_text(sec["text"], max_chars=self.max_window_chars)
+        if len(windows) == 1:
+            know = self._llm_extract(client, windows[0], metadata, section_title=sec["title"])
+        else:
+            partials = [
+                self._llm_extract(client, w, metadata, section_title=sec["title"])
+                for w in windows
+            ]
+            know = self._synthesize_overall(client, partials, metadata)
+        know["chapter_index"] = sec["index"]
+        know["chapter_title"] = sec["title"]
+        know["chapter_start"] = sec["start"]
+        return know
+
     def _extract_chapters(
         self, client: Any, chapter_sections: list[dict], metadata: dict
     ) -> list[dict]:
-        """Extract knowledge per chapter (one Claude call each), order preserved.
+        """Extract knowledge per chapter, parallel + resumable, order preserved.
 
-        Long chapters are internally windowed+synthesized. Each returned dict is
-        the chapter knowledge plus its index/title/start for memory metadata.
+        - Each chapter is one (streamed) Claude call, run concurrently across a
+          ThreadPoolExecutor so a 24-chapter video no longer takes 24× the time.
+        - Every finished chapter is checkpointed to disk immediately; if the run
+          is interrupted, a re-run skips chapters already in the checkpoint and
+          only extracts the missing ones ("dort fortfahren, wo es abbrach").
+        - Order is restored by chapter index before returning.
         """
-        out: list[dict] = []
+        video_id = str(metadata.get("video_id") or metadata.get("url") or "video")
         total = len(chapter_sections)
-        for sec in chapter_sections:
-            print(f"[SkillMind] Kapitel {sec['index'] + 1}/{total}: {sec['title'][:50]}…", flush=True)
-            windows = self._window_text(sec["text"], max_chars=28000)
-            if len(windows) == 1:
-                know = self._llm_extract(client, windows[0], metadata, section_title=sec["title"])
-            else:
-                partials = [
-                    self._llm_extract(client, w, metadata, section_title=sec["title"])
-                    for w in windows
-                ]
-                know = self._synthesize_overall(client, partials, metadata)
-            know["chapter_index"] = sec["index"]
-            know["chapter_title"] = sec["title"]
-            know["chapter_start"] = sec["start"]
-            out.append(know)
-        return out
+
+        done = self._load_checkpoint(video_id)
+        results: dict[int, dict] = dict(done)
+        todo = [s for s in chapter_sections if s["index"] not in results]
+        if done:
+            print(f"[SkillMind] Resume: {len(done)}/{total} Kapitel bereits aus "
+                  f"Checkpoint, extrahiere {len(todo)} weitere…", flush=True)
+
+        def _work(sec: dict) -> tuple[int, dict]:
+            know = self._extract_one_chapter(client, sec, metadata)
+            # Persist this chapter right away so progress survives a crash.
+            self._save_checkpoint_chapter(video_id, sec["index"], know)
+            return sec["index"], know
+
+        completed = len(done)
+        with ThreadPoolExecutor(max_workers=self.concurrency) as pool:
+            futs = {pool.submit(_work, sec): sec for sec in todo}
+            for fut in as_completed(futs):
+                sec = futs[fut]
+                try:
+                    idx, know = fut.result()
+                    results[idx] = know
+                    completed += 1
+                    print(f"[SkillMind] Kapitel {idx + 1}/{total} fertig "
+                          f"({completed}/{total}): {sec['title'][:50]}…", flush=True)
+                except Exception as e:
+                    # Leave it out of the checkpoint so a re-run retries it.
+                    print(f"[SkillMind] Kapitel {sec['index'] + 1} fehlgeschlagen: {e}", flush=True)
+
+        return [results[i] for i in sorted(results)]
 
     def _parse_knowledge_yaml(self, text: str, metadata: dict) -> dict:
         """Parse YAML knowledge extraction response.
