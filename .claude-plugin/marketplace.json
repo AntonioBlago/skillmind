@@ -1,0 +1,22 @@
+{
+  "name": "skillmind",
+  "owner": {
+    "name": "Antonio Blago",
+    "email": "info@antonioblago.com"
+  },
+  "metadata": {
+    "description": "SkillMind — structured memory layer for AI coding assistants (MCP server + OKF second brain).",
+    "version": "0.6.0"
+  },
+  "plugins": [
+    {
+      "name": "skillmind",
+      "source": "./",
+      "description": "Active Skill Listener & Trainer — vector-DB-backed memory for Claude Code. 31 MCP tools: remember/recall, OKF portable second brain, Obsidian export, YouTube/video learning.",
+      "version": "0.6.0",
+      "author": {
+        "name": "Antonio Blago"
+      }
+    }
+  ]
+}

@@ -645,6 +645,167 @@ def create_server():
             **stats,
         }, indent=2)
 
+    # ─── OKF (Open Knowledge Format) Tools ───────────────────────
+
+    @mcp.tool()
+    def export_okf(
+        bundle_path: str,
+        full_rebuild: bool = False,
+        title: str = "SkillMind Knowledge Base",
+    ) -> str:
+        """
+        Export all memories to a spec-compliant OKF (Open Knowledge Format) bundle.
+
+        OKF is a vendor-neutral knowledge format (markdown + YAML frontmatter)
+        from Google's knowledge-catalog project. The bundle is a portable
+        "second brain": an index.md entry point, per-category concept folders,
+        standard markdown relative links as graph edges, a change log, and
+        numbered Citations for provenance. Re-importable via import_okf_bundle.
+
+        Args:
+            bundle_path: Directory to write the OKF bundle into
+            full_rebuild: If true, clear concept folders before writing
+            title: Bundle title shown in index.md / README.md
+        """
+        from ..exporters.okf import OKFExporter
+
+        if not bundle_path:
+            return json.dumps({"status": "error", "message": "bundle_path is required."})
+
+        exporter = OKFExporter(bundle_path, bundle_title=title)
+        memories = store.list_all(limit=10000)
+        stats = exporter.export(memories, full_rebuild=full_rebuild)
+
+        return json.dumps({
+            "status": "exported",
+            "bundle_path": str(bundle_path),
+            "entry_point": f"{bundle_path}/index.md",
+            **stats,
+        }, indent=2)
+
+    @mcp.tool()
+    def import_okf_bundle(bundle_path: str, dry_run: bool = False) -> str:
+        """
+        Import an external OKF bundle into the store.
+
+        Reads a directory of OKF concept files (markdown + YAML frontmatter),
+        maps each concept's freeform `type` onto a SkillMind memory type (or
+        lets the Trainer classify it), and stores it with deduplication.
+        Bundles produced by export_okf round-trip losslessly via their
+        skillmind_* frontmatter keys.
+
+        Args:
+            bundle_path: Path to the OKF bundle directory (or a single concept file)
+            dry_run: If true, parse and report but do not store
+        """
+        from ..importers.okf import import_okf_bundle as _import_okf
+
+        if not bundle_path:
+            return json.dumps({"status": "error", "message": "bundle_path is required."})
+
+        stats = _import_okf(trainer, bundle_path, dry_run=dry_run)
+        return json.dumps({
+            "status": "dry_run" if dry_run else "imported",
+            **stats,
+        }, indent=2)
+
+    @mcp.tool()
+    def visualize_okf(
+        bundle_path: str,
+        output: str = "okf-graph.html",
+        title: str = "",
+    ) -> str:
+        """
+        Render an OKF bundle as a self-contained local HTML knowledge graph.
+
+        Reads an OKF bundle directory and writes one standalone HTML file
+        (Cytoscape.js force-directed graph + marked.js detail panel) modeled on
+        Google's knowledge-catalog OKF viewer, but server-free: the whole graph
+        is embedded, so the file works straight from disk (file://). Edges are
+        the bundle's relative markdown links; nodes are colored by concept type.
+
+        Args:
+            bundle_path: Path to an existing OKF bundle directory (e.g. from export_okf)
+            output: HTML file name written inside the bundle
+            title: Graph title (defaults to the bundle folder name)
+        """
+        from ..exporters.okf_viz import OKFVisualizer
+
+        if not bundle_path:
+            return json.dumps({"status": "error", "message": "bundle_path is required."})
+
+        visualizer = OKFVisualizer(bundle_path, title=title or None)
+        try:
+            out_path = visualizer.build(output_name=output)
+        except NotADirectoryError as exc:
+            return json.dumps({"status": "error", "message": str(exc)})
+
+        stats = visualizer.build_graph()["stats"]
+        return json.dumps({
+            "status": "rendered",
+            "html_path": str(out_path),
+            "open_with": out_path.resolve().as_uri(),
+            **stats,
+        }, indent=2)
+
+    @mcp.tool()
+    def enrich_source(
+        source_type: str,
+        source: str,
+        force_type: str = "",
+        tags: str = "",
+        limit: int = 0,
+        dry_run: bool = False,
+    ) -> str:
+        """
+        Enrich the store from a pluggable knowledge source (the 'second brain' loop).
+
+        Harvests documents from a source, then sanitizes, classifies and
+        deduplicates each one into a memory via the Trainer. The result can be
+        exported as an OKF bundle (export_okf), closing the loop:
+        any source -> SkillMind store -> OKF.
+
+        Args:
+            source_type: 'markdown' (a file/directory) or 'web' (a URL)
+            source: path for markdown, or URL for web
+            force_type: optional memory type (user|feedback|project|reference|skill)
+            tags: comma-separated tags added to every harvested document
+            limit: stop after N documents (0 = no limit)
+            dry_run: discover and report without storing
+        """
+        from ..enrichment import EnrichmentRunner
+        from ..sources import create_source
+        from ..models import MemoryType as _MT
+
+        if not source_type or not source:
+            return json.dumps({"status": "error", "message": "source_type and source are required."})
+
+        try:
+            knowledge_source = create_source(source_type, source)
+        except ValueError as exc:
+            return json.dumps({"status": "error", "message": str(exc)})
+
+        mem_type = None
+        if force_type:
+            try:
+                mem_type = _MT(force_type)
+            except ValueError:
+                return json.dumps({"status": "error", "message": f"Unknown force_type: {force_type}"})
+
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+        runner = EnrichmentRunner(trainer)
+        stats = runner.run(
+            knowledge_source,
+            dry_run=dry_run,
+            default_type=mem_type,
+            default_tags=tag_list,
+            limit=limit or None,
+        )
+        return json.dumps({
+            "status": "dry_run" if dry_run else "enriched",
+            **stats,
+        }, indent=2)
+
     # ─── Review Mode & Queue Tools ─────────────────────────────
 
     @mcp.tool()

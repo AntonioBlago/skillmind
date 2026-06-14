@@ -1,0 +1,30 @@
+{
+  "name": "skillmind",
+  "displayName": "SkillMind",
+  "version": "0.6.0",
+  "description": "Active Skill Listener & Trainer — a structured, vector-database-backed memory layer for AI coding assistants. Exposes 31 MCP tools for remember/recall, OKF portable second brain, Obsidian export, and learning from YouTube/video.",
+  "author": {
+    "name": "Antonio Blago",
+    "email": "info@antonioblago.com",
+    "url": "https://antonioblago.de"
+  },
+  "homepage": "https://skill-mind.com",
+  "repository": "https://github.com/AntonioBlago/skillmind",
+  "license": "MIT",
+  "keywords": [
+    "mcp",
+    "memory",
+    "vector-database",
+    "semantic-search",
+    "knowledge-graph",
+    "graphrag",
+    "okf",
+    "second-brain"
+  ],
+  "mcpServers": {
+    "skillmind": {
+      "command": "skillmind",
+      "args": ["serve"]
+    }
+  }
+}

@@ -65,7 +65,7 @@ skillmind import ~/.claude/projects/*/memory/
                                     └─────────────────┘
 ```
 
-## 5 Vector Store Backends
+## 6 Vector Store Backends
 
 | Backend | Best for | Requires |
 |---------|----------|----------|
@@ -74,10 +74,11 @@ skillmind import ~/.claude/projects/*/memory/
 | **Supabase** | SQL + vectors, team sharing | Supabase project |
 | **Qdrant** | Self-hosted or cloud, great filtering | Qdrant server |
 | **FAISS** | Offline, air-gapped, fastest | `pip install skillmind[faiss]` |
+| **FalkorDB** | GraphRAG (graph + vector, multi-hop) | FalkorDB server (`falkordb>=1.6`) |
 
 All backends implement the same interface — switch anytime with zero data loss.
 
-## 23 MCP Tools for Claude Code
+## 31 MCP Tools for Claude Code
 
 Once installed, Claude Code gets these tools:
 
@@ -122,6 +123,16 @@ Once installed, Claude Code gets these tools:
 | `reject_all_pending` | Clear the queue |
 | `edit_pending` | Edit content/type/topic before approving |
 
+### Export & Enrichment (Obsidian / OKF)
+| Tool | What it does |
+|---|---|
+| `export_obsidian` | Export the whole memory system as an Obsidian wiki vault |
+| `sync_obsidian` | Incremental sync of new/changed memories into the vault |
+| `export_okf` | Export memories as a portable [OKF](https://github.com/GoogleCloudPlatform/knowledge-catalog) bundle (vendor-neutral markdown) |
+| `import_okf_bundle` | Import an OKF bundle back into the store (round-trip safe) |
+| `visualize_okf` | Render an OKF bundle as a self-contained local HTML knowledge graph (no server) |
+| `enrich_source` | Pull knowledge from a source (markdown/web), classify & store it |
+
 ### MCP Setup (Claude Code settings.json)
 
 ```json
@@ -138,6 +149,18 @@ Once installed, Claude Code gets these tools:
   }
 }
 ```
+
+### Install as a Claude Code Plugin
+
+SkillMind ships as a one-command Claude Code plugin — it registers the MCP server for you, no manual `settings.json` editing:
+
+```bash
+# In Claude Code:
+/plugin marketplace add AntonioBlago/skillmind
+/plugin install skillmind@skillmind
+```
+
+This adds the SkillMind marketplace from the GitHub repo and installs the plugin, which wires up the `skillmind serve` MCP server automatically. Make sure the CLI is on your `PATH` first (`pip install skillmind[mcp]`), then restart Claude Code to load the 31 tools.
 
 ## Memory Types
 
@@ -302,6 +325,37 @@ skillmind learn-youtube-channel "UCxxxxx" --limit 5
 
 The extracted knowledge is auto-stored as memories and can be synced to your Obsidian vault.
 
+## Portable Second Brain (OKF)
+
+Beyond the Obsidian vault, SkillMind can export your whole memory system as an **[Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog) (OKF) bundle** — a vendor-neutral folder of markdown concept docs with relative wiki links, an `index.md` entry point, a `log.md` changelog, and `# Citations` provenance. The bundle is portable across tools and **round-trip safe**: export, edit elsewhere, import back without losing SkillMind metadata.
+
+```bash
+skillmind export-okf ~/brain-okf            # Export portable bundle
+skillmind import-okf ~/brain-okf --dry-run  # Preview an external bundle
+skillmind import-okf ~/brain-okf            # Import (classified + deduplicated)
+skillmind viz-okf ~/brain-okf --open        # Render a local HTML knowledge graph
+```
+
+### Local Knowledge Graph
+
+Turn any OKF bundle into an **interactive, self-contained HTML graph** — no server, no build step. `viz-okf` writes a single `okf-graph.html` into the bundle that renders concepts as nodes and relative wiki links as edges (Cytoscape.js + marked.js via CDN), with search, type filters, click-through navigation, and backlinks. This is a native re-implementation of the OKF viewer concept — it reads the bundle directly, so it stays in line with the no-`enrichment_agent` constraint above.
+
+```bash
+skillmind viz-okf ~/brain-okf                       # Write okf-graph.html into the bundle
+skillmind viz-okf ~/brain-okf -o graph.html --open  # Custom name + open in browser
+```
+
+> SkillMind adopts only the OKF **format and bundle/enrichment concepts** — it does **not** vendor Google's `enrichment_agent` (which is tied to google-adk + BigQuery), so the bundle stays portable and backend-agnostic.
+
+### Enrichment Loop
+
+Pull knowledge from external sources, auto-classify it, and store it as memories — the same pipeline as `remember`, but from a source adapter (markdown or web):
+
+```bash
+skillmind enrich -t markdown -s ./notes/              # Learn from local markdown
+skillmind enrich -t web -s https://example.com/post   # Learn from a web page
+```
+
 ## Built-in Sanitizer
 
 API keys, emails, phone numbers, IBANs, and PII are **automatically redacted** before storing:
@@ -317,16 +371,29 @@ Configurable allowlists, custom patterns, and name anonymization.
 
 ```bash
 skillmind init --backend chroma     # Initialize with backend
+skillmind setup                     # Interactive first-run setup
 skillmind remember "content"        # Store a memory
 skillmind recall "query"            # Semantic search
 skillmind list                      # List all memories
 skillmind list --type feedback      # Filter by type
 skillmind forget <id>               # Delete
 skillmind import                    # Import Claude Code memories
+skillmind migrate --from chroma --to pinecone   # Move data between backends
 skillmind consolidate               # Cleanup & deduplicate
 skillmind context                   # Generate context for current dir
 skillmind stats                     # Show statistics
 skillmind serve                     # Start MCP server
+
+# Export / portable second brain
+skillmind export ~/Documents/MyWiki         # Export to Obsidian vault
+skillmind sync --vault ~/Documents/MyWiki   # Incremental vault sync
+skillmind export-okf ~/brain-okf            # Export portable OKF bundle
+skillmind import-okf ~/brain-okf            # Import an OKF bundle (--dry-run to preview)
+skillmind viz-okf ~/brain-okf --open        # Render a self-contained local HTML graph
+
+# Enrichment loop (source → classify → store)
+skillmind enrich -t markdown -s ./notes/    # Learn from markdown files
+skillmind enrich -t web -s https://example.com/post   # Learn from a web page
 ```
 
 ## Installation
@@ -357,22 +424,36 @@ src/skillmind/
 ├── embeddings.py      # EmbeddingEngine (sentence-transformers | OpenAI)
 ├── trainer.py         # Auto-classify, dedup, merge, consolidate
 ├── sanitizer.py       # Redact API keys, PII before storage
+├── review.py          # Review queue (queue → approve/reject → store)
+├── setup.py           # Interactive first-run setup
 ├── listener.py        # GitListener, FileListener, ConversationListener
 ├── context.py         # ContextGenerator — dynamic context injection
 ├── migration.py       # Import existing Claude Code markdown memories
+├── enrichment.py      # Enrichment loop: source → classify → store
 ├── store/
 │   ├── base.py            # Abstract MemoryStore interface
 │   ├── chroma_store.py    # ChromaDB backend
 │   ├── pinecone_store.py  # Pinecone backend
 │   ├── supabase_store.py  # Supabase/pgvector backend
 │   ├── qdrant_store.py    # Qdrant backend
-│   └── faiss_store.py     # FAISS + JSON backend
+│   ├── faiss_store.py     # FAISS + JSON backend
+│   └── falkordb_store.py  # FalkorDB backend (GraphRAG: graph + vector)
+├── sources/
+│   ├── base.py            # Source adapter interface
+│   ├── markdown_source.py # Markdown files → memories
+│   └── web_source.py      # Web pages → memories
+├── exporters/
+│   ├── obsidian.py        # Obsidian vault exporter (Karpathy wiki pattern)
+│   ├── okf.py             # OKF bundle exporter (portable, vendor-neutral)
+│   └── okf_viz.py         # OKF → self-contained local HTML knowledge graph
+├── importers/
+│   └── okf.py             # OKF bundle importer (round-trip safe)
 ├── video/
 │   ├── youtube_learner.py     # YouTube transcript extraction
 │   ├── video_learner.py       # Local video learning
 │   └── screen_recorder.py     # Screen capture
 ├── mcp/
-│   └── server.py      # FastMCP server (14 tools)
+│   └── server.py      # FastMCP server (31 tools)
 └── cli/
     └── main.py        # CLI (click-based)
 ```

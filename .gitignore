@@ -52,5 +52,12 @@ website/
 generate_pdfs.py
 
 # Deploy secrets — public repo: commit the generic guide, never the instance values
+# NOTE: *.local.* covers e.g. config.local.yml; *.local / *.local/ also covers a
+# bare ".local" suffix such as the generated okf-bundle.local/ knowledge dump.
 deploy/**/*.local.*
+deploy/**/*.local/
+deploy/**/*.local
 deploy/**/.railway
+
+# Generated artifacts / stray output
+nul

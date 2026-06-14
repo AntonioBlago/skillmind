@@ -549,6 +549,122 @@ def sync_obsidian(ctx: click.Context, vault: str) -> None:
     console.print(f"  [dim]Skipped: {stats['pages_skipped']} existing pages[/dim]")
 
 
+# ── OKF (Open Knowledge Format) Commands ─────────────────────
+
+
+@cli.command("export-okf")
+@click.argument("bundle_path")
+@click.option("--full-rebuild", is_flag=True, help="Clear concept folders before writing")
+@click.option("--title", default="SkillMind Knowledge Base", help="Bundle title (shown in index.md)")
+@click.pass_context
+def export_okf(ctx: click.Context, bundle_path: str, full_rebuild: bool, title: str) -> None:
+    """Export all memories to a spec-compliant OKF bundle (portable second brain)."""
+    from ..exporters.okf import OKFExporter
+
+    _, _, store, _ = _get_components(ctx.obj.get("config_path"))
+    exporter = OKFExporter(bundle_path, bundle_title=title)
+    memories = store.list_all(limit=10000)
+
+    console.print(f"[bold]Exporting {len(memories)} memories to OKF bundle {bundle_path}[/bold]")
+    stats = exporter.export(memories, full_rebuild=full_rebuild)
+
+    console.print(f"  [green]Created: {stats['concepts_created']} concepts[/green]")
+    console.print(f"  [yellow]Updated: {stats['concepts_updated']} concepts[/yellow]")
+    console.print(f"  Entry point: {bundle_path}/index.md")
+
+
+@cli.command("import-okf")
+@click.argument("bundle_path")
+@click.option("--dry-run", is_flag=True, help="Preview without importing")
+@click.pass_context
+def import_okf(ctx: click.Context, bundle_path: str, dry_run: bool) -> None:
+    """Import an external OKF bundle into the store (classified + deduplicated)."""
+    from ..importers.okf import import_okf_bundle
+
+    _, _, store, trainer = _get_components(ctx.obj.get("config_path"))
+
+    console.print(f"[bold]{'DRY RUN — ' if dry_run else ''}Importing OKF bundle {bundle_path}[/bold]")
+    stats = import_okf_bundle(trainer, bundle_path, dry_run=dry_run)
+
+    console.print(f"  Concepts found:  {stats['files_found']}")
+    console.print(f"  [green]Imported:        {stats['imported']}[/green]")
+    console.print(f"  [yellow]Skipped (dupes): {stats['skipped_duplicate']}[/yellow]")
+    console.print(f"  [red]Skipped (error): {stats['skipped_error']}[/red]")
+
+    if dry_run and stats["concepts"]:
+        console.print("\n[bold]Would import:[/bold]")
+        for c in stats["concepts"][:50]:
+            console.print(f"  [{c.get('type', '?')}] {c.get('title', '?')} ({c.get('concept_id', '')})")
+        console.print("\n[dim]Run without --dry-run to actually import.[/dim]")
+
+
+@cli.command("viz-okf")
+@click.argument("bundle_path")
+@click.option("--output", "-o", default="okf-graph.html", help="HTML file name (written inside the bundle)")
+@click.option("--title", default="", help="Graph title (defaults to the bundle folder name)")
+@click.option("--open", "open_browser", is_flag=True, help="Open the graph in the default browser when done")
+def viz_okf(bundle_path: str, output: str, title: str, open_browser: bool) -> None:
+    """Render an OKF bundle as a self-contained local HTML knowledge graph (no server)."""
+    import webbrowser
+    from ..exporters.okf_viz import OKFVisualizer
+
+    visualizer = OKFVisualizer(bundle_path, title=title or None)
+    console.print(f"[bold]Visualizing OKF bundle {bundle_path}[/bold]")
+    out_path = visualizer.build(output_name=output)
+    stats = visualizer.build_graph()["stats"]
+
+    console.print(f"  [green]Concepts: {stats['concepts']}[/green]  "
+                  f"[cyan]Links: {stats['edges']}[/cyan]  "
+                  f"[dim]Types: {stats['types']}[/dim]")
+    console.print(f"  Graph written to {out_path}")
+    console.print("  [dim]Open it in any browser (CDN needed only on first load).[/dim]")
+
+    if open_browser:
+        webbrowser.open(out_path.resolve().as_uri())
+
+
+@cli.command("enrich")
+@click.option("--source-type", "-t", required=True, type=click.Choice(["markdown", "web"]), help="Knowledge source type")
+@click.option("--source", "-s", "source_target", required=True, help="Path (markdown) or URL (web)")
+@click.option("--type", "force_type", default="", type=click.Choice(["", "user", "feedback", "project", "reference", "skill"]), help="Force memory type")
+@click.option("--tag", "tags", multiple=True, help="Tag added to every harvested document (repeatable)")
+@click.option("--limit", default=0, help="Stop after N documents (0 = no limit)")
+@click.option("--dry-run", is_flag=True, help="Discover without storing")
+@click.pass_context
+def enrich(
+    ctx: click.Context,
+    source_type: str,
+    source_target: str,
+    force_type: str,
+    tags: tuple,
+    limit: int,
+    dry_run: bool,
+) -> None:
+    """Enrich the store from a pluggable knowledge source (the 'second brain' loop)."""
+    from ..enrichment import EnrichmentRunner
+    from ..sources import create_source
+
+    _, _, store, trainer = _get_components(ctx.obj.get("config_path"))
+
+    source = create_source(source_type, source_target)
+    runner = EnrichmentRunner(trainer)
+    mem_type = MemoryType(force_type) if force_type else None
+
+    console.print(f"[bold]{'DRY RUN — ' if dry_run else ''}Enriching from {source.name}: {source_target}[/bold]")
+    stats = runner.run(
+        source,
+        dry_run=dry_run,
+        default_type=mem_type,
+        default_tags=list(tags) if tags else None,
+        limit=limit or None,
+    )
+
+    console.print(f"  Discovered:      {stats['discovered']}")
+    console.print(f"  [green]Imported:        {stats['imported']}[/green]")
+    console.print(f"  [yellow]Skipped (dupes): {stats['skipped_duplicate']}[/yellow]")
+    console.print(f"  [dim]Skipped (empty): {stats['skipped_empty']}[/dim]")
+
+
 # ── Setup Command ─────────────────────────────────────────────
 
 

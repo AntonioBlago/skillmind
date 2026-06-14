@@ -626,7 +626,7 @@ class FalkorDBStore(MemoryStore):
             content=data.get("content") or "",
             tags=list(data.get("tags") or []),
             source=MemorySource(data.get("source") or "manual"),
-            confidence=float(data.get("confidence", 1.0)),
+            confidence=float(data["confidence"]) if data.get("confidence") is not None else 1.0,
             created_at=datetime.fromisoformat(data["created_at"]) if data.get("created_at") else datetime.utcnow(),
             updated_at=datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else datetime.utcnow(),
             expires_at=datetime.fromisoformat(expires) if expires else None,
