@@ -242,6 +242,12 @@ class YouTubeLearner:
         phase. Used by async MCP tools to emit live MCP progress notifications.
         The callback runs in the worker thread, so keep it cheap and non-blocking.
         """
+        # Titles/progress lines can carry emoji (e.g. a 🧠 at the start of a
+        # video title); guarantee a cp1252 stdout never aborts the run, even
+        # when learn() is called directly as a library (no MCP/CLI entry point).
+        from ..ioutil import force_utf8_io
+
+        force_utf8_io()
         total_steps = 4
 
         def _emit(step: int, msg: str) -> None:
@@ -401,6 +407,9 @@ class YouTubeLearner:
         force_topic: str | None = None,
     ) -> list[Memory]:
         """Learn from the latest N videos of a YouTube channel."""
+        from ..ioutil import force_utf8_io
+
+        force_utf8_io()
         print(f"[SkillMind] Fetching channel video list ({channel_id})...", flush=True)
         videos = self._get_channel_videos(channel_id, max_videos)
         print(f"[SkillMind] Found {len(videos)} videos to process", flush=True)

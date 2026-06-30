@@ -67,6 +67,46 @@ def test_progress_cb_exception_is_swallowed(offline_learner):
     assert len(memories) >= 1
 
 
+class _Cp1252Stdout:
+    """stdout double that rejects non-cp1252 glyphs until reconfigured to UTF-8."""
+
+    def __init__(self) -> None:
+        self.encoding = "cp1252"
+        self.errors = "strict"
+
+    def reconfigure(self, *, encoding=None, errors=None):
+        if encoding:
+            self.encoding = encoding
+        if errors:
+            self.errors = errors
+
+    def write(self, text: str) -> int:
+        text.encode(self.encoding, errors=self.errors)
+        return len(text)
+
+    def flush(self) -> None:
+        pass
+
+
+def test_emoji_title_does_not_crash_on_cp1252_stdout(offline_learner, monkeypatch):
+    """Regression: a 🧠-prefixed title once aborted learn() on a Windows console.
+
+    learn() now calls force_utf8_io() up front, so the progress line
+    ``[SkillMind] 2/4 Hole Transkript: 🧠…`` prints instead of raising
+    UnicodeEncodeError at the emoji's column.
+    """
+    offline_learner._get_metadata = MagicMock(return_value={
+        "title": "🧠 Wie du Ablehnung im Verkauf meisterst",
+        "author": "Tester", "duration": 600, "tags": [],
+        "video_id": "abcdef12345",
+        "url": "https://www.youtube.com/watch?v=abcdef12345",
+    })
+    monkeypatch.setattr("sys.stdout", _Cp1252Stdout())
+
+    memories = offline_learner.learn("https://www.youtube.com/watch?v=abcdef12345")
+    assert len(memories) >= 1
+
+
 def test_no_transcript_skips_to_reference(offline_learner):
     """When no transcript is found, only phases 1+2 fire and a reference is stored."""
     offline_learner._get_transcript = MagicMock(return_value="")

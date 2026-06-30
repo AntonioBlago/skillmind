@@ -48,6 +48,10 @@ def _get_components(config_path: str | None = None):
 @click.pass_context
 def cli(ctx: click.Context, config: str | None) -> None:
     """SkillMind — Active memory & skill layer for AI coding assistants."""
+    from ..ioutil import force_utf8_io
+
+    # Make stdout/stderr UTF-8-safe so emoji in titles/progress never crash a run.
+    force_utf8_io()
     ctx.ensure_object(dict)
     ctx.obj["config_path"] = config
 

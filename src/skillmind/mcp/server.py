@@ -977,6 +977,11 @@ def create_server():
 
 def main():
     """Run the MCP server (stdio transport)."""
+    from ..ioutil import force_utf8_io
+
+    # Worker threads (e.g. learn_youtube) print emoji-laden titles; without this
+    # a Windows cp1252 stdout crashes the tool with UnicodeEncodeError.
+    force_utf8_io()
     server = create_server()
     server.run()
 
